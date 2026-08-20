@@ -1,6 +1,6 @@
 # Voice Command Shopping Assistant
 
-> 🚧 **Currently in development.** Implementation will be completed in phases according to the technical assessment roadmap. Nothing in this repository is claimed as finished or verified yet — sections describing features, architecture, and technology represent the **planned** design.
+> 🚧 **Currently in development.** Implementation is being completed in phases according to the technical assessment roadmap. See [Project Status](#project-status) for what is actually working today — everything else on this page describes the **planned** design, not finished work.
 
 A voice-based shopping list manager that lets users add, remove, and modify items using natural spoken language, and provides smart shopping suggestions based on history, seasonality, and product alternatives.
 
@@ -175,14 +175,16 @@ The assignment brief does not specify which languages must be supported. The sco
 
 🚧 **Currently in development.** Implementation will be completed in phases according to the technical assessment roadmap.
 
-At this stage the repository contains documentation only. No application code, dependencies, build configuration, or deployment exists yet.
+The project is set up and the shopping-list foundation is in place: items can be added, merged, modified, checked off, removed, and cleared, they are grouped automatically by category, and the list persists in the browser.
+
+Voice recognition, natural-language parsing, multilingual support, voice search, and smart suggestions are not implemented yet. The application is not deployed yet.
 
 ## Implementation Roadmap
 
 | # | Phase | Status |
 |---|---|---|
-| 1 | Project setup | Not started |
-| 2 | Core shopping list | Not started |
+| 1 | Project setup | Complete |
+| 2 | Core shopping list | Complete |
 | 3 | NLP / parser | Not started |
 | 4 | Voice recognition | Not started |
 | 5 | Multilingual support | Not started |
