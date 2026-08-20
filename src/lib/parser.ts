@@ -10,6 +10,7 @@ import {
   extractTargetQuantity,
   type QuantityPatterns,
 } from './quantity'
+import { extractSearchFilters, hasAnyFilter } from './search'
 import type { Confidence, Intent, LangCode, ParsedCommand } from '../types'
 
 /**
@@ -202,14 +203,18 @@ export function parseCommand(raw: string, language: LangCode = 'en'): ParsedComm
 
   const search = matchFirst(rules.patterns.search, text)
   if (search) {
-    const query = stripFillers(search[1] ?? '', rules)
-    if (!query) return unknownCommand(raw, rules.code)
+    const filters = extractSearchFilters(search[1] ?? '', rules)
+
+    // "find" on its own asks for nothing at all.
+    if (!hasAnyFilter(filters)) return unknownCommand(raw, rules.code)
+
     return {
       ...base,
       intent: 'search',
-      item: query,
+      item: filters.query,
       quantity: null,
       unit: null,
+      filters,
       confidence: 'high',
     }
   }

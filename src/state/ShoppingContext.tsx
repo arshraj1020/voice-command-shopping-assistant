@@ -8,9 +8,11 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { CATALOG } from '../data/catalog'
 import { getLexicon } from '../data/lexicon'
 import { createId } from '../lib/id'
 import { parseCommand } from '../lib/parser'
+import { hasAnyFilter, searchProducts } from '../lib/search'
 import {
   loadItems,
   loadLanguage,
@@ -20,9 +22,13 @@ import {
 import { findItemByName, shoppingReducer } from './shoppingReducer'
 import type {
   CommandResult,
+  FilterField,
   LangCode,
   ListItem,
   ParsedCommand,
+  ProductTag,
+  SearchFilters,
+  SearchState,
   ShoppingState,
   Unit,
 } from '../types'
@@ -56,6 +62,10 @@ interface ShoppingContextValue {
   lastResult: CommandResult | null
   language: LangCode
   setLanguage: (language: LangCode) => void
+  /** The active product search. Never touches the shopping list. */
+  search: SearchState | null
+  clearSearch: () => void
+  removeSearchFilter: (field: FilterField, tag?: ProductTag) => void
 }
 
 const ShoppingContext = createContext<ShoppingContextValue | null>(null)
@@ -69,6 +79,7 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(shoppingReducer, undefined, init)
   const [language, setLanguageState] = useState<LangCode>(loadLanguage)
   const [lastResult, setLastResult] = useState<CommandResult | null>(null)
+  const [search, setSearch] = useState<SearchState | null>(null)
 
   useEffect(() => {
     saveItems(state.items)
@@ -83,6 +94,43 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
     // The previous result was interpreted with the old vocabulary.
     setLastResult(null)
   }, [])
+
+  const clearSearch = useCallback(() => setSearch(null), [])
+
+  /** Drop one filter and re-run the search against what remains. */
+  const removeSearchFilter = useCallback(
+    (field: FilterField, tag?: ProductTag) => {
+      setSearch((current) => {
+        if (!current) return current
+
+        const filters: SearchFilters = { ...current.filters }
+
+        switch (field) {
+          case 'query':
+            filters.query = null
+            break
+          case 'brand':
+            filters.brand = null
+            break
+          case 'minPrice':
+            filters.minPrice = null
+            break
+          case 'maxPrice':
+            filters.maxPrice = null
+            break
+          case 'size':
+            filters.size = null
+            break
+          case 'attribute':
+            filters.attributes = filters.attributes.filter((item) => item !== tag)
+            break
+        }
+
+        return { filters, results: searchProducts(CATALOG, filters) }
+      })
+    },
+    [],
+  )
 
   const value = useMemo<ShoppingContextValue>(() => {
     const addItem = (name: string, quantity?: number, unit?: Unit | null) =>
@@ -192,12 +240,29 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
             message: getLexicon(command.language).helpMessage,
           }
 
-        case 'search':
+        case 'search': {
+          const filters = command.filters
+          if (!filters || !hasAnyFilter(filters)) {
+            return {
+              command,
+              status: 'error',
+              message: 'Tell me what to search for, such as “find toothpaste under $5”.',
+            }
+          }
+
+          // Searching never modifies the shopping list.
+          const results = searchProducts(CATALOG, filters)
+          setSearch({ filters, results })
+
           return {
             command,
-            status: 'info',
-            message: 'Product search is not available yet — it arrives in a later phase.',
+            status: results.length > 0 ? 'success' : 'info',
+            message:
+              results.length > 0
+                ? `Found ${results.length} ${results.length === 1 ? 'product' : 'products'}.`
+                : 'No products found. Try relaxing the price or brand filter.',
           }
+        }
 
         default:
           return { command, status: 'error', message: "I couldn't understand that." }
@@ -225,8 +290,19 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       lastResult,
       language,
       setLanguage,
+      search,
+      clearSearch,
+      removeSearchFilter,
     }
-  }, [state.items, language, lastResult, setLanguage])
+  }, [
+    state.items,
+    language,
+    lastResult,
+    search,
+    setLanguage,
+    clearSearch,
+    removeSearchFilter,
+  ])
 
   return <ShoppingContext.Provider value={value}>{children}</ShoppingContext.Provider>
 }

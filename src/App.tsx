@@ -1,5 +1,6 @@
 import CommandInput from './components/CommandInput'
 import LanguageSelector from './components/LanguageSelector'
+import SearchResults from './components/SearchResults'
 import ShoppingList from './components/ShoppingList'
 import VoiceControls from './components/VoiceControls'
 import { ShoppingProvider, useShopping } from './state/ShoppingContext'
@@ -30,6 +31,7 @@ export default function App() {
 
         <VoiceControls />
         <CommandInput />
+        <SearchResults />
         <Toolbar />
         <ShoppingList />
       </main>

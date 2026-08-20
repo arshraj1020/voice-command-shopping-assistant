@@ -55,6 +55,46 @@ export interface ShoppingState {
 }
 
 /* ------------------------------------------------------------------ */
+/* Product catalog                                                     */
+/* ------------------------------------------------------------------ */
+
+/** Packaged size of a product, e.g. 500 ml or 1 kg. */
+export interface ProductSize {
+  value: number
+  unit: Unit
+}
+
+/** Searchable product attributes. */
+export type ProductTag =
+  | 'organic'
+  | 'sugar-free'
+  | 'whole-grain'
+  | 'low-fat'
+  | 'gluten-free'
+
+/**
+ * A catalog entry.
+ *
+ * `name` follows the same canonical convention as `ListItem.name` — lowercase
+ * and singular — so a product added from search merges with the list exactly
+ * as a spoken "add" would.
+ */
+export interface Product {
+  id: string
+  name: string
+  brand: string
+  category: Category
+  /** Regular shelf price. */
+  price: number
+  /** Discounted price when `onSale`, otherwise `null`. */
+  salePrice: number | null
+  onSale: boolean
+  size: ProductSize | null
+  tags: ProductTag[]
+  inStock: boolean
+}
+
+/* ------------------------------------------------------------------ */
 /* Command parsing                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -74,15 +114,15 @@ export type LangCode = 'en' | 'hi'
 /** How sure the parser is. Low-confidence commands are never executed. */
 export type Confidence = 'high' | 'low'
 
-/**
- * Filters carried by a search command.
- * Populated by the voice-search phase — always `null` today.
- */
+/** Filters carried by a search command. */
 export interface SearchFilters {
+  /** Free-text product terms left after every other filter is consumed. */
   query: string | null
   brand: string | null
+  minPrice: number | null
   maxPrice: number | null
-  size: { value: number; unit: Unit } | null
+  size: ProductSize | null
+  attributes: ProductTag[]
 }
 
 /** The result of parsing one typed or spoken command. */
@@ -105,6 +145,30 @@ export interface CommandResult {
   command: ParsedCommand
   status: 'success' | 'info' | 'error'
   message: string
+}
+
+/** Which filter a chip represents, so the UI can remove exactly one. */
+export type FilterField =
+  | 'query'
+  | 'brand'
+  | 'minPrice'
+  | 'maxPrice'
+  | 'size'
+  | 'attribute'
+
+/** One removable filter chip. */
+export interface FilterChip {
+  id: string
+  label: string
+  field: FilterField
+  /** Set only when `field` is `'attribute'`. */
+  tag?: ProductTag
+}
+
+/** The active search, held outside the shopping list — search never edits it. */
+export interface SearchState {
+  filters: SearchFilters
+  results: Product[]
 }
 
 /* ------------------------------------------------------------------ */

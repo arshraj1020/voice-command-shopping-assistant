@@ -147,7 +147,7 @@ const ENGLISH: LanguageRules = {
       /^i do not (?:need|want)\b(.*)$/,
       /^(?:remove|delete|drop)\b(.*)$/,
     ],
-    search: [/^(?:search for|look for|find|search)\b(.*)$/],
+    search: [/^(?:search for|look for|show me|find|search)\b(.*)$/],
     add: [
       /^i want to buy\b(.*)$/,
       /^i would like to buy\b(.*)$/,

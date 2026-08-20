@@ -17,6 +17,7 @@ A voice-based shopping list manager that lets users add, remove, and modify item
 - [Multilingual Scope](#multilingual-scope)
 - [Natural-Language Commands](#natural-language-commands)
 - [Voice Input](#voice-input)
+- [Product Search](#product-search)
 - [Project Status](#project-status)
 - [Implementation Roadmap](#implementation-roadmap)
 - [Assignment Constraints](#assignment-constraints)
@@ -76,10 +77,10 @@ The features required by the assignment brief. Ticked items are implemented; the
 
 ### Voice-Activated Search
 
-- [ ] **Voice product search** — find products by spoken query (*"find me organic apples"*)
-- [ ] **Brand filtering** — filter results by spoken brand name
-- [ ] **Size filtering** — filter results by spoken size or volume
-- [ ] **Price-range filtering** — filter results by spoken price constraint (*"find toothpaste under $5"*)
+- [x] **Voice product search** — find products by spoken query (*"find me organic apples"*)
+- [x] **Brand filtering** — filter results by spoken brand name
+- [x] **Size filtering** — filter results by spoken size or volume
+- [x] **Price-range filtering** — filter results by spoken price constraint (*"find toothpaste under $5"*)
 
 ### UI / UX
 
@@ -238,6 +239,40 @@ A spoken command and the identical typed command run the same code from the tran
 
 Speech recognition also needs a secure context: it works on `localhost` and over HTTPS, but not over plain `http://` on a LAN address.
 
+## Product Search
+
+Search is a separate action from the shopping list: it reads a static catalog and **never modifies the list**. Adding a result to the list goes through the same `addItem()` action a spoken "add" uses.
+
+```
+"find Colgate under $5"
+        ↓  same parser, search intent
+SearchFilters { query, brand, minPrice, maxPrice, size, attributes }
+        ↓  searchProducts(catalog, filters)
+results  →  removable filter chips + product cards
+```
+
+**Filters are extracted most-specific-first**, each stage consuming its own tokens:
+
+1. **Price** — `under $5`, `below $5`, `less than $5`, `over $10`, `above $10`, `between $5 and $10`. Price is consumed *first* so the "5" in "under $5" can never be mistaken for a size or a quantity.
+2. **Size** — `500ml`, `1 l`, `250 g`, `1 kg`. Normalised to a common base, so `1L` matches a product listed as `1000 ml`.
+3. **Brand** — matched against the brands actually present in the catalog, derived from the data rather than hardcoded.
+4. **Attributes** — `organic`, `sugar-free`, `whole-grain`, `low-fat`, `gluten-free`, each with spoken variants (`sugar free`, `wholegrain`).
+5. **Query** — whatever meaningful words survive.
+
+**Examples**
+
+| Command | Parsed as |
+|---|---|
+| `find me organic apples` | query `apples`, attribute `organic` |
+| `find toothpaste under $5` | query `toothpaste`, maxPrice `5` |
+| `find Colgate under $5` | brand `Colgate`, maxPrice `5` |
+| `find 500ml Coke` | query `coke`, size `500 ml` |
+| `search for organic apples` · `look for toothpaste below $5` · `show me Colgate under $5` | same as above |
+
+**Filter chips make the parsing visible.** Every extracted filter is shown as a removable chip, so it is obvious which constraints were actually heard — and dropping one re-runs the search immediately. Results are ordered deterministically: in stock first, then cheapest first. When nothing matches, the panel says so and suggests relaxing a filter rather than going blank.
+
+**The catalog is static sample data.** `src/data/catalog.ts` holds 33 invented products across eight categories, with brands, sizes, prices, sale prices, stock flags, and attribute tags. It is written for this assessment — it is **not** live supermarket inventory, and the prices and stock levels are simulated. There is no product API and no backend.
+
 ## Project Status
 
 🚧 **Currently in development.** Implementation will be completed in phases according to the technical assessment roadmap.
@@ -248,8 +283,9 @@ Working today:
 - **Natural-language commands** — instructions such as *"add 2 bottles of water"* or *"take eggs off my list"* are parsed and executed. See [Natural-Language Commands](#natural-language-commands).
 - **Voice input** — spoken commands via the browser's Web Speech API, feeding the same parser. See [Voice Input](#voice-input).
 - **English and Hindi** — commands in either language, resolving to one canonical list. See [Multilingual Scope](#multilingual-scope).
+- **Voice product search** — spoken queries with brand, size, price-range, and attribute filters. See [Product Search](#product-search).
 
-Not implemented yet: voice-activated product search, smart suggestions, and final UI polish. The application is not deployed yet.
+Not implemented yet: smart suggestions (history-based recommendations, seasonal/on-sale suggestions, and product substitutes) and final UI polish. The application is not deployed yet.
 
 Browser support has not been formally tested yet, so this README makes no compatibility claims. The app feature-detects speech recognition at startup and falls back to the text command box wherever it is unavailable. The [Browser Support](#browser-support) section will be filled in once real testing is done.
 
@@ -262,7 +298,7 @@ Browser support has not been formally tested yet, so this README makes no compat
 | 3 | NLP / parser | Complete |
 | 4 | Voice recognition | Complete |
 | 5 | Multilingual support | Complete (English + Hindi) |
-| 6 | Voice search | Not started |
+| 6 | Voice search | Complete |
 | 7 | Smart suggestions | Not started |
 | 8 | UI / UX | Not started |
 | 9 | Testing | Not started |
