@@ -15,6 +15,7 @@ A voice-based shopping list manager that lets users add, remove, and modify item
 - [Planned Architecture](#planned-architecture)
 - [Planned Voice / NLP Flow](#planned-voice--nlp-flow)
 - [Multilingual Scope](#multilingual-scope)
+- [Natural-Language Commands](#natural-language-commands)
 - [Project Status](#project-status)
 - [Implementation Roadmap](#implementation-roadmap)
 - [Assignment Constraints](#assignment-constraints)
@@ -171,13 +172,55 @@ The planned approach is to switch the speech recognition language and map recogn
 
 The assignment brief does not specify which languages must be supported. The scope above is chosen as the smallest implementation that demonstrates the requirement properly within the time budget. Additional languages may be added if time permits.
 
+## Natural-Language Commands
+
+Commands are interpreted by a small rule-based parser written for this project. There is no NLP library, no machine-learning model, and no external API — the whole pipeline is deterministic pure functions, which keeps it fast, offline, free, and testable.
+
+```
+raw input
+   ↓  normalizeText()      lowercase · expand contractions · strip punctuation
+   ↓                       · number words to digits · collapse whitespace
+   ↓  detect intent        ordered keyword rules, most specific first
+   ↓  extractQuantity()    number + unit, article + unit, or a bare count
+   ↓  stripFillers()       "to my list", "please", "some", "the", …
+   ↓  canonicalizeItemName()   lowercase + simple singularisation
+   ↓
+ParsedCommand { intent, item, quantity, unit, filters, language, raw, confidence }
+   ↓  runCommand()         dispatches the existing shopping-list actions
+   ↓
+list update + visible feedback
+```
+
+**Intents:** `add`, `remove`, `update`, `clear`, `help`, `unknown`. (`search` is recognised as an intent but not executed — that arrives with the voice-search phase.)
+
+**Examples that work**
+
+| Command | Result |
+|---|---|
+| `add milk` · `I need apples` · `I want to buy bananas` | adds one item |
+| `put rice on my list` · `get me eggs` | adds one item |
+| `add 2 bottles of water` | adds water, quantity 2, unit bottle |
+| `buy 5 oranges` · `add three apples` | adds with a plain count |
+| `add a dozen eggs` · `add 500 ml milk` · `add 1 kg rice` | adds with a unit |
+| `remove milk` · `delete bread` · `take eggs off my list` | removes an item |
+| `change apples to 5` · `make apples 3` · `set milk to 2` | changes a quantity |
+| `clear my list` · `empty my shopping list` · `remove everything` | clears the list |
+| `help` | shows the supported commands |
+
+**Safety rule.** The parser prefers a false negative over a destructive false positive. Anything it cannot match confidently — nonsense, questions, multi-item commands, an item name with a stray number in it — returns `unknown` or `low` confidence, and the execution layer refuses to modify the list. Every command shows both what was heard and what was understood, so an unexpected result is always explainable rather than mysterious.
+
+The same `parseCommand()` → `runCommand()` path will serve speech transcripts, so voice and text will behave identically.
+
 ## Project Status
 
 🚧 **Currently in development.** Implementation will be completed in phases according to the technical assessment roadmap.
 
-The project is set up and the shopping-list foundation is in place: items can be added, merged, modified, checked off, removed, and cleared, they are grouped automatically by category, and the list persists in the browser.
+Working today:
 
-Voice recognition, natural-language parsing, multilingual support, voice search, and smart suggestions are not implemented yet. The application is not deployed yet.
+- Shopping list — add, merge, modify, check off, remove, and clear items; automatic categorisation; persistence in the browser.
+- Natural-language commands, typed — plain-English instructions such as *"add 2 bottles of water"* or *"take eggs off my list"* are parsed and executed. See [Natural-Language Commands](#natural-language-commands) below.
+
+Not implemented yet: voice recognition, multilingual commands, voice search, and smart suggestions. The application is not deployed yet.
 
 ## Implementation Roadmap
 
@@ -185,7 +228,7 @@ Voice recognition, natural-language parsing, multilingual support, voice search,
 |---|---|---|
 | 1 | Project setup | Complete |
 | 2 | Core shopping list | Complete |
-| 3 | NLP / parser | Not started |
+| 3 | NLP / parser | Complete |
 | 4 | Voice recognition | Not started |
 | 5 | Multilingual support | Not started |
 | 6 | Voice search | Not started |

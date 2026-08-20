@@ -6,6 +6,7 @@
   --color-text: #1a1d21;
   --color-text-muted: #5c6470;
   --color-accent: #1f6feb;
+  --color-success: #1e8e4e;
   --color-danger: #c0392b;
 
   --space-1: 0.25rem;
@@ -78,20 +79,96 @@ select {
   font-size: 0.875rem;
 }
 
-/* Temporary Phase 1 test controls. */
-.add {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+/* Command entry */
+.command {
   margin-bottom: var(--space-4);
 }
 
-.add__name {
-  flex: 1 1 10rem;
+.command__form {
+  display: flex;
+  gap: var(--space-2);
 }
 
-.add__quantity {
-  width: 4.5rem;
+.command__input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Parser feedback */
+.feedback {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+
+.feedback--success {
+  border-left-color: var(--color-success);
+}
+
+.feedback--info {
+  border-left-color: var(--color-accent);
+}
+
+.feedback--error {
+  border-left-color: var(--color-danger);
+}
+
+.feedback p {
+  margin: 0 0 var(--space-2);
+}
+
+.feedback p:last-child {
+  margin-bottom: 0;
+}
+
+.feedback__heard,
+.feedback__understood {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.feedback__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.feedback__raw {
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.feedback__intent {
+  font-weight: 600;
+  color: var(--color-accent);
+  letter-spacing: 0.04em;
+}
+
+.feedback__chip {
+  padding: 2px var(--space-2);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.feedback__message {
+  white-space: pre-line;
+}
+
+.feedback__examples {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  color: var(--color-text-muted);
 }
 
 .toolbar {

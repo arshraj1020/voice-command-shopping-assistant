@@ -1,4 +1,5 @@
-import { categorizeItem, normalizeItemName, toDisplayName } from '../lib/categorize'
+import { categorizeItem } from '../lib/categorize'
+import { normalizeItemName, toDisplayName } from '../lib/normalize'
 import type { ListItem, ShoppingState, Unit } from '../types'
 
 export type ShoppingAction =

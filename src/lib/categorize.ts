@@ -1,36 +1,29 @@
 import { KEYWORD_ENTRIES } from '../data/categories'
+import { normalizeItemName, singularizePhrase } from './normalize'
 import type { Category } from '../types'
 
 /**
- * Canonical form of an item name: lowercase, punctuation removed,
- * whitespace collapsed. Used both for categorisation and for matching
- * items already on the list.
+ * Keyword table extended with singular forms, so that a canonicalised item
+ * name ("grape", "almond", "paper towel") still matches a keyword that was
+ * only written in the plural.
+ *
+ * Sorted longest-first so the most specific keyword wins — this is what keeps
+ * "ice cream" out of Dairy and "dish soap" out of Personal Care.
  */
-export function normalizeItemName(raw: string): string {
-  return raw
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+const MATCH_ENTRIES: readonly (readonly [string, Category])[] = (() => {
+  const seen = new Set<string>()
+  const entries: (readonly [string, Category])[] = []
 
-/** Title-cased name for display. */
-export function toDisplayName(raw: string): string {
-  return normalizeItemName(raw)
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-}
+  for (const [keyword, category] of KEYWORD_ENTRIES) {
+    for (const form of [keyword, singularizePhrase(keyword)]) {
+      if (seen.has(form)) continue
+      seen.add(form)
+      entries.push([form, category] as const)
+    }
+  }
 
-/** Naive English singulariser. Good enough for grocery nouns. */
-function singularize(word: string): string {
-  if (word.length <= 3 || word.endsWith('ss')) return word
-  if (word.endsWith('ies')) return `${word.slice(0, -3)}y`
-  if (word.endsWith('es') && /(ch|sh|x|z|s)es$/.test(word)) return word.slice(0, -2)
-  if (word.endsWith('s')) return word.slice(0, -1)
-  return word
-}
+  return entries.sort((a, b) => b[0].length - a[0].length)
+})()
 
 /** True when `keyword` appears in `name` as a whole word or phrase. */
 function containsPhrase(name: string, keyword: string): boolean {
@@ -54,24 +47,26 @@ function containsPhrase(name: string, keyword: string): boolean {
  *   1. exact match on the whole normalised name
  *   2. exact match on its singular form
  *   3. whole-word/phrase match anywhere in the name (longest keyword wins)
- *   4. singular whole-word match on individual words
+ *   4. whole-word match on individual singularised words
  */
 export function categorizeItem(itemName: string): Category {
   const name = normalizeItemName(itemName)
   if (!name) return 'other'
 
-  const singularName = singularize(name)
+  const singularName = singularizePhrase(name)
 
-  for (const [keyword, category] of KEYWORD_ENTRIES) {
+  for (const [keyword, category] of MATCH_ENTRIES) {
     if (keyword === name || keyword === singularName) return category
   }
 
-  for (const [keyword, category] of KEYWORD_ENTRIES) {
-    if (containsPhrase(name, keyword)) return category
+  for (const [keyword, category] of MATCH_ENTRIES) {
+    if (containsPhrase(name, keyword) || containsPhrase(singularName, keyword)) {
+      return category
+    }
   }
 
-  const words = name.split(' ').map(singularize)
-  for (const [keyword, category] of KEYWORD_ENTRIES) {
+  const words = name.split(' ').map((word) => singularizePhrase(word))
+  for (const [keyword, category] of MATCH_ENTRIES) {
     if (words.includes(keyword)) return category
   }
 

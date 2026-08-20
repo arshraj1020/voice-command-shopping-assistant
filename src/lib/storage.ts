@@ -1,6 +1,7 @@
 import { CATEGORY_ORDER } from '../data/categories'
-import { categorizeItem, normalizeItemName, toDisplayName } from './categorize'
+import { categorizeItem } from './categorize'
 import { createId } from './id'
+import { normalizeItemName, toDisplayName } from './normalize'
 import type { Category, ListItem, Unit } from '../types'
 
 /** Versioned so a future schema change cannot be fed stale data. */
