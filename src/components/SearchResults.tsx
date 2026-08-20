@@ -1,51 +1,53 @@
+import { useEffect, useRef } from 'react'
 import { effectivePrice } from '../data/catalog'
 import { formatCurrency } from '../lib/currency'
 import { toDisplayName } from '../lib/normalize'
 import { describeFilters, formatSize } from '../lib/search'
 import { useShopping } from '../state/ShoppingContext'
+import { CloseIcon, PlusIcon, SearchIcon } from './Icon'
 import type { Product } from '../types'
 
 function ProductCard({ product }: { product: Product }) {
   const { addItem } = useShopping()
   const price = effectivePrice(product)
+  const discounted = product.onSale && product.salePrice !== null
 
   return (
-    <li className="product">
+    <li className={`product${product.inStock ? '' : ' product--out'}`}>
       <div className="product__main">
-        <p className="product__name">
-          <span className="product__brand">{product.brand}</span>
-          {toDisplayName(product.name)}
-        </p>
+        <span className="product__brand">{product.brand}</span>
+        <p className="product__name">{toDisplayName(product.name)}</p>
 
         <p className="product__meta">
-          {product.size && <span>{formatSize(product.size)}</span>}
           <span className="product__price">{formatCurrency(price)}</span>
-          {product.onSale && product.salePrice !== null && (
+          {discounted && (
             <span className="product__was">{formatCurrency(product.price)}</span>
           )}
+          {product.size && <span>{formatSize(product.size)}</span>}
         </p>
 
-        <p className="product__badges">
-          {product.onSale && <span className="badge badge--sale">Sale</span>}
-          {product.tags.map((tag) => (
-            <span key={tag} className="badge">
-              {toDisplayName(tag.replace('-', ' '))}
-            </span>
-          ))}
-          <span
-            className={`badge ${product.inStock ? 'badge--stock' : 'badge--out'}`}
-          >
-            {product.inStock ? 'In stock' : 'Out of stock'}
-          </span>
-        </p>
+        {/* Only badges that carry information — "in stock" is on everything. */}
+        {(discounted || !product.inStock || product.tags.length > 0) && (
+          <p className="product__badges">
+            {discounted && <span className="badge badge--sale">Sale</span>}
+            {!product.inStock && <span className="badge badge--out">Out of stock</span>}
+            {product.tags.map((tag) => (
+              <span key={tag} className="badge">
+                {toDisplayName(tag.replace('-', ' '))}
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       {/* Adding goes through the existing shopping-list action. */}
       <button
         type="button"
+        className="btn btn--primary btn--sm"
         onClick={() => addItem(product.name)}
         aria-label={`Add ${toDisplayName(product.name)} by ${product.brand} to your list`}
       >
+        <PlusIcon size={16} />
         Add
       </button>
     </li>
@@ -61,51 +63,84 @@ function ProductCard({ product }: { product: Product }) {
  */
 export default function SearchResults() {
   const { search, clearSearch, removeSearchFilter } = useShopping()
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Bring results into view on open — a search that scrolls off-screen looks
+  // like a search that did nothing.
+  useEffect(() => {
+    if (search) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [search])
+
+  // Escape closes the panel.
+  useEffect(() => {
+    if (!search) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') clearSearch()
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [search, clearSearch])
+
   if (!search) return null
 
   const chips = describeFilters(search.filters)
 
   return (
-    <section className="search" aria-label="Search results">
-      <div className="search__header">
-        <h2 className="search__title">
-          Search results
-          <span className="search__count">{search.results.length}</span>
-        </h2>
-        <button type="button" onClick={clearSearch}>
-          Close
-        </button>
+    <section className="section" aria-label="Search results">
+      <div className="search" ref={panelRef}>
+        <div className="section__head">
+          <h2 className="section__title">Results</h2>
+          <span className="section__count">
+            {search.results.length}
+            <span className="sr-only"> products</span>
+          </span>
+          <span className="section__spacer" />
+          <button
+            type="button"
+            className="btn btn--icon"
+            onClick={clearSearch}
+            aria-label="Close search results"
+          >
+            <CloseIcon size={18} />
+          </button>
+        </div>
+
+        {chips.length > 0 && (
+          <ul className="search__filters" aria-label="Active filters">
+            {chips.map((chip) => (
+              <li key={chip.id}>
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => removeSearchFilter(chip.field, chip.tag)}
+                  aria-label={`Remove filter ${chip.label}`}
+                >
+                  {chip.label}
+                  <CloseIcon size={14} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {search.results.length === 0 ? (
+          <div className="empty" role="status">
+            <SearchIcon size={28} className="empty__icon" />
+            <p className="empty__title">No products match</p>
+            <p className="empty__text">
+              Try removing a filter above, or widening the price range.
+            </p>
+          </div>
+        ) : (
+          <ul className="search__results">
+            {search.results.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </ul>
+        )}
       </div>
-
-      {chips.length > 0 && (
-        <ul className="search__filters" aria-label="Active filters">
-          {chips.map((chip) => (
-            <li key={chip.id}>
-              <button
-                type="button"
-                className="chip"
-                onClick={() => removeSearchFilter(chip.field, chip.tag)}
-                aria-label={`Remove filter ${chip.label}`}
-              >
-                {chip.label}
-                <span aria-hidden="true">✕</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {search.results.length === 0 ? (
-        <p className="empty" role="status">
-          No products found. Try relaxing the price or brand filter.
-        </p>
-      ) : (
-        <ul className="search__results">
-          {search.results.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </ul>
-      )}
     </section>
   )
 }

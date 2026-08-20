@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -37,6 +38,9 @@ import type {
   Suggestion,
   Unit,
 } from '../types'
+
+/** How long a success message stays on screen before clearing itself. */
+const SUCCESS_DISMISS_MS = 4000
 
 /** Units that are counted and therefore pluralise: "2 bottles of water". */
 const COUNTABLE_UNITS: readonly Unit[] = ['bottle', 'can', 'pack', 'box', 'piece']
@@ -99,6 +103,29 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<LangCode>(loadLanguage)
   const [lastResult, setLastResult] = useState<CommandResult | null>(null)
   const [search, setSearch] = useState<SearchState | null>(null)
+
+  // "Added milk" stops being useful within seconds, so a successful result
+  // clears itself. Failures stay until the next command.
+  const dismissTimer = useRef<number | null>(null)
+
+  useEffect(
+    () => () => {
+      if (dismissTimer.current !== null) window.clearTimeout(dismissTimer.current)
+    },
+    [],
+  )
+
+  const publishResult = useCallback((result: CommandResult) => {
+    if (dismissTimer.current !== null) window.clearTimeout(dismissTimer.current)
+    setLastResult(result)
+
+    if (result.status === 'success') {
+      dismissTimer.current = window.setTimeout(() => {
+        dismissTimer.current = null
+        setLastResult(null)
+      }, SUCCESS_DISMISS_MS)
+    }
+  }, [])
 
   useEffect(() => {
     saveItems(state.items)
@@ -307,7 +334,7 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       clearList,
       runCommand: (input) => {
         const result = execute(parseCommand(input, language))
-        setLastResult(result)
+        publishResult(result)
         return result
       },
       lastResult,
@@ -346,6 +373,7 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
     setLanguage,
     clearSearch,
     removeSearchFilter,
+    publishResult,
   ])
 
   return <ShoppingContext.Provider value={value}>{children}</ShoppingContext.Provider>

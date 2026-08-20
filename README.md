@@ -85,9 +85,9 @@ The features required by the assignment brief. Ticked items are implemented; the
 
 ### UI / UX
 
-- [ ] **Minimalist UI** — a clean interface focused on the shopping list *(functional; visual polish pending)*
+- [x] **Minimalist UI** — a clean interface focused on the shopping list
 - [x] **Real-time visual feedback** — show the recognized command and the resulting action as it happens
-- [ ] **Mobile / voice-first experience** — designed for small screens and spoken interaction *(polish pending)*
+- [x] **Mobile / voice-first experience** — designed for small screens and spoken interaction
 - [x] **Loading states** — clear indication while speech is being processed
 - [x] **Error handling** — graceful handling of unsupported browsers, denied microphone permissions, and unrecognized commands
 
@@ -327,7 +327,7 @@ Working today:
 - **Voice product search** — spoken queries with brand, size, price-range, and attribute filters. See [Product Search](#product-search).
 - **Smart suggestions** — history-based recommendations, seasonal and on-sale suggestions, and product substitutes. See [Smart Suggestions](#smart-suggestions).
 
-Still outstanding: final UI polish, a full testing pass, and deployment. The application is not deployed yet.
+Still outstanding: a full testing pass and deployment. The application is not deployed yet.
 
 Browser support has not been formally tested yet, so this README makes no compatibility claims. The app feature-detects speech recognition at startup and falls back to the text command box wherever it is unavailable. The [Browser Support](#browser-support) section will be filled in once real testing is done.
 
@@ -342,7 +342,7 @@ Browser support has not been formally tested yet, so this README makes no compat
 | 5 | Multilingual support | Complete (English + Hindi) |
 | 6 | Voice search | Complete |
 | 7 | Smart suggestions | Complete |
-| 8 | UI / UX | Not started |
+| 8 | UI / UX | Complete |
 | 9 | Testing | Not started |
 | 10 | Deployment | Not started |
 | 11 | Documentation and final submission | In progress |

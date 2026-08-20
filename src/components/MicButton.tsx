@@ -1,3 +1,4 @@
+import { MicIcon, MicOffIcon, SpinnerIcon, StopIcon } from './Icon'
 import type { MicStatus } from '../types'
 
 interface MicButtonProps {
@@ -6,34 +7,45 @@ interface MicButtonProps {
   onStop: () => void
 }
 
-/** Visible label and accessible name for each microphone state. */
-const LABELS: Record<MicStatus, { text: string; action: string }> = {
-  idle: { text: 'Speak', action: 'Start voice input' },
-  listening: { text: 'Stop', action: 'Stop listening' },
-  processing: { text: 'Working…', action: 'Processing your command' },
-  unsupported: { text: 'Voice unavailable', action: 'Voice input is not supported in this browser' },
-  denied: { text: 'Try again', action: 'Retry voice input after allowing microphone access' },
-  error: { text: 'Try again', action: 'Retry voice input' },
+/** Accessible name per state — describes the action, not the state. */
+const ACTIONS: Record<MicStatus, string> = {
+  idle: 'Start voice input',
+  listening: 'Stop listening',
+  processing: 'Processing your command',
+  unsupported: 'Voice input is not supported in this browser',
+  denied: 'Retry voice input after allowing microphone access',
+  error: 'Retry voice input',
 }
 
+function Glyph({ status }: { status: MicStatus }) {
+  if (status === 'listening') return <StopIcon size={22} />
+  if (status === 'processing') return <SpinnerIcon size={22} />
+  if (status === 'denied') return <MicOffIcon size={22} />
+  return <MicIcon size={22} />
+}
+
+/**
+ * The primary action of the whole application.
+ *
+ * Renders nothing when speech recognition is unavailable: a permanently dead
+ * primary button is worse than no button, and the dock shows an explicit
+ * text-fallback message in its place.
+ */
 export default function MicButton({ status, onStart, onStop }: MicButtonProps) {
+  if (status === 'unsupported') return null
+
   const listening = status === 'listening'
-  const disabled = status === 'processing' || status === 'unsupported'
-  const { text, action } = LABELS[status]
 
   return (
     <button
       type="button"
       className={`mic mic--${status}`}
       onClick={listening ? onStop : onStart}
-      disabled={disabled}
-      aria-label={action}
+      disabled={status === 'processing'}
+      aria-label={ACTIONS[status]}
       aria-pressed={listening}
     >
-      <span className="mic__icon" aria-hidden="true">
-        {listening ? '■' : '🎤'}
-      </span>
-      <span className="mic__text">{text}</span>
+      <Glyph status={status} />
     </button>
   )
 }

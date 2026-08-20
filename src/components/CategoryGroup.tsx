@@ -10,10 +10,15 @@ interface CategoryGroupProps {
 export default function CategoryGroup({ category, items }: CategoryGroupProps) {
   return (
     <section className="group">
-      <h2 className="group__title">
+      {/* Sticks below the app bar while its own items scroll past. */}
+      <h3 className="group__title">
         {CATEGORY_LABELS[category]}
-        <span className="group__count">{items.length}</span>
-      </h2>
+        <span className="section__count">
+          {items.length}
+          <span className="sr-only"> items</span>
+        </span>
+      </h3>
+
       <ul className="group__items">
         {items.map((item) => (
           <ListItem key={item.id} item={item} />

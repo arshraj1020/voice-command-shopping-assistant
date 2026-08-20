@@ -1,6 +1,5 @@
 import { getLexicon } from '../data/lexicon'
 import { useShopping } from '../state/ShoppingContext'
-import CommandFeedback from './CommandFeedback'
 import type { MicStatus } from '../types'
 
 interface TranscriptBarProps {
@@ -9,51 +8,65 @@ interface TranscriptBarProps {
   errorMessage: string | null
 }
 
+/** What the status line says in each microphone state. */
 const STATUS_TEXT: Record<MicStatus, string> = {
-  idle: 'Tap Speak, or type a command below.',
+  idle: 'Tap the mic and speak, or type a command',
   listening: 'Listening…',
-  processing: 'Processing…',
-  unsupported: 'Voice input unavailable — the text box below works exactly the same.',
-  denied: 'Microphone blocked.',
-  error: 'Voice input failed.',
+  processing: 'Working on it…',
+  unsupported: '',
+  denied: 'Microphone blocked',
+  error: 'Voice input failed',
 }
 
 /**
- * Shows the recognition state, what the browser heard, and what the parser
- * made of it. Serves both input paths: a typed command produces the same
- * `CommandResult`, so the panel is the single place the user looks.
+ * Recognition state and the live transcript.
+ *
+ * Sits inside the command dock, directly above the input, so the user reads
+ * the app's state exactly where they are about to act.
  */
 export default function TranscriptBar({
   status,
   interimTranscript,
   errorMessage,
 }: TranscriptBarProps) {
-  const { lastResult, language } = useShopping()
+  const { language } = useShopping()
   const rules = getLexicon(language)
+
+  const unsupported = status === 'unsupported'
   const showInterim = status === 'listening' && interimTranscript.length > 0
 
   return (
-    <div className="transcript">
-      <p className="transcript__status">
-        <span className="transcript__language">Language: {rules.englishLabel}</span>
-        <span className={`transcript__state transcript__state--${status}`}>
-          {STATUS_TEXT[status]}
-        </span>
-      </p>
-
+    <>
       {showInterim && (
-        <p className="transcript__interim" aria-live="polite">
-          “{interimTranscript}”
+        <p className="interim" aria-live="polite" aria-atomic="true">
+          {interimTranscript}
         </p>
       )}
 
-      {errorMessage && (
-        <p className="transcript__error" role="alert">
-          {errorMessage}
+      {/*
+        The unsupported case gets a plain, permanent explanation instead of a
+        dead microphone: everything still works by typing.
+      */}
+      {unsupported ? (
+        <p className="banner banner--info">
+          Voice input isn&rsquo;t supported in this browser. Type your commands
+          below — every feature works exactly the same.
         </p>
+      ) : (
+        errorMessage && (
+          <p className="banner banner--error" role="alert">
+            {errorMessage}
+          </p>
+        )
       )}
 
-      <CommandFeedback result={lastResult} />
-    </div>
+      {!unsupported && (
+        <p className={`status status--${status}`}>
+          <span>{STATUS_TEXT[status]}</span>
+          <span aria-hidden="true">·</span>
+          <span>{rules.englishLabel}</span>
+        </p>
+      )}
+    </>
   )
 }
