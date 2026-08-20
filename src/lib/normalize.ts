@@ -101,14 +101,14 @@ function normalizeDigits(text: string): string {
  * lowercase -> expand contractions -> strip punctuation -> normalise digits
  * -> collapse whitespace.
  *
- * `$` and decimal points are preserved because the voice-search phase needs
- * them for price filters.
+ * Currency symbols (`\p{Sc}`, which covers ₹ and $) and decimal points are
+ * preserved because product search needs them for price filters.
  */
 export function normalizeText(raw: string): string {
   const lowered = raw.toLowerCase().replace(/[‘’ʼ]/g, "'")
 
   const stripped = expandContractions(lowered)
-    .replace(/[^\p{L}\p{M}\p{N}\s$.'-]/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}\p{Sc}\s.'-]/gu, ' ')
     .replace(/'/g, '')
     // Keep decimal points, drop sentence punctuation.
     .replace(/\.(?!\d)/g, ' ')

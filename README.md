@@ -80,7 +80,7 @@ The features required by the assignment brief. Ticked items are implemented; the
 - [x] **Voice product search** — find products by spoken query (*"find me organic apples"*)
 - [x] **Brand filtering** — filter results by spoken brand name
 - [x] **Size filtering** — filter results by spoken size or volume
-- [x] **Price-range filtering** — filter results by spoken price constraint (*"find toothpaste under $5"*)
+- [x] **Price-range filtering** — filter results by spoken price constraint (*"find toothpaste under ₹500"*)
 
 ### UI / UX
 
@@ -244,7 +244,7 @@ Speech recognition also needs a secure context: it works on `localhost` and over
 Search is a separate action from the shopping list: it reads a static catalog and **never modifies the list**. Adding a result to the list goes through the same `addItem()` action a spoken "add" uses.
 
 ```
-"find Colgate under $5"
+"find Colgate under ₹300"
         ↓  same parser, search intent
 SearchFilters { query, brand, minPrice, maxPrice, size, attributes }
         ↓  searchProducts(catalog, filters)
@@ -253,7 +253,7 @@ results  →  removable filter chips + product cards
 
 **Filters are extracted most-specific-first**, each stage consuming its own tokens:
 
-1. **Price** — `under $5`, `below $5`, `less than $5`, `over $10`, `above $10`, `between $5 and $10`. Price is consumed *first* so the "5" in "under $5" can never be mistaken for a size or a quantity.
+1. **Price** — `under ₹500`, `below 500 rupees`, `less than Rs 500`, `under INR 500`, `over ₹1000`, `above ₹1000`, `more than ₹1000`, `between ₹200 and ₹500`. Every spelling normalises to the same numeric filter. Price is consumed *first* so the "500" in "under ₹500" can never be mistaken for a size or a quantity.
 2. **Size** — `500ml`, `1 l`, `250 g`, `1 kg`. Normalised to a common base, so `1L` matches a product listed as `1000 ml`.
 3. **Brand** — matched against the brands actually present in the catalog, derived from the data rather than hardcoded.
 4. **Attributes** — `organic`, `sugar-free`, `whole-grain`, `low-fat`, `gluten-free`, each with spoken variants (`sugar free`, `wholegrain`).
@@ -264,14 +264,19 @@ results  →  removable filter chips + product cards
 | Command | Parsed as |
 |---|---|
 | `find me organic apples` | query `apples`, attribute `organic` |
-| `find toothpaste under $5` | query `toothpaste`, maxPrice `5` |
-| `find Colgate under $5` | brand `Colgate`, maxPrice `5` |
+| `find toothpaste under ₹500` | query `toothpaste`, maxPrice `500` |
+| `find toothpaste below 500 rupees` | query `toothpaste`, maxPrice `500` |
+| `find Colgate under ₹300` | brand `Colgate`, maxPrice `300` |
+| `find milk over ₹50` | query `milk`, minPrice `50` |
+| `find products between ₹100 and ₹500` | minPrice `100`, maxPrice `500` |
 | `find 500ml Coke` | query `coke`, size `500 ml` |
-| `search for organic apples` · `look for toothpaste below $5` · `show me Colgate under $5` | same as above |
+| `search for organic apples` · `look for toothpaste below ₹500` · `show me Colgate under ₹300` | same as above |
 
 **Filter chips make the parsing visible.** Every extracted filter is shown as a removable chip, so it is obvious which constraints were actually heard — and dropping one re-runs the search immediately. Results are ordered deterministically: in stock first, then cheapest first. When nothing matches, the panel says so and suggests relaxing a filter rather than going blank.
 
-**The catalog is static sample data.** `src/data/catalog.ts` holds 33 invented products across eight categories, with brands, sizes, prices, sale prices, stock flags, and attribute tags. It is written for this assessment — it is **not** live supermarket inventory, and the prices and stock levels are simulated. There is no product API and no backend.
+**The catalog is static sample data.** `src/data/catalog.ts` holds 33 invented products across eight categories, with brands, sizes, prices, sale prices, stock flags, and attribute tags.
+
+Product prices are **simulated sample values represented in Indian Rupees (INR)** for demonstration purposes. They are plausible retail-style figures invented for this assessment — not live Indian retail pricing, and not real inventory. There is no product API and no backend. Prices are stored as plain numbers; `Intl.NumberFormat('en-IN')` handles display formatting, so values render as ₹95 and ₹1,249 with Indian digit grouping.
 
 ## Project Status
 

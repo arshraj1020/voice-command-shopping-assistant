@@ -1,5 +1,6 @@
 import { CATALOG_BRANDS, effectivePrice } from '../data/catalog'
 import type { LanguageRules } from '../data/lexicon'
+import { formatCurrency } from './currency'
 import {
   alternation,
   canonicalizeItemName,
@@ -79,19 +80,35 @@ const TAG_PATTERN = new RegExp(
   'u',
 )
 
-const MAX_PRICE_PATTERN =
-  /(?:under|below|less than|cheaper than|at most|up ?to|within)\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:dollars?|bucks?|rupees?|rs)?/
-const MIN_PRICE_PATTERN =
-  /(?:over|above|more than|at least|starting (?:at|from))\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:dollars?|bucks?|rupees?|rs)?/
-const BETWEEN_PRICE_PATTERN =
-  /between\s*\$?\s*(\d+(?:\.\d+)?)\s*(?:and|to)\s*\$?\s*(\d+(?:\.\d+)?)/
+/*
+ * A money amount, written any of the ways a shopper might say it:
+ * "₹500", "Rs 500", "Rs.500", "INR 500", "500 rupees", or a bare "500".
+ * `\p{Sc}` covers every currency sign, so "$5" keeps working at no extra cost.
+ */
+const CURRENCY_PREFIX = '(?:\\p{Sc}|rs\\.?|inr)?\\s*'
+const CURRENCY_SUFFIX =
+  '(?:\\s*(?:rupees?|rupaye|rs|inr|dollars?|bucks?)(?![\\p{L}\\p{M}\\p{N}]))?'
+const AMOUNT = `${CURRENCY_PREFIX}(\\d+(?:\\.\\d+)?)${CURRENCY_SUFFIX}`
+
+const MAX_PRICE_PATTERN = new RegExp(
+  `(?:under|below|less than|cheaper than|at most|up ?to|within)\\s*${AMOUNT}`,
+  'u',
+)
+const MIN_PRICE_PATTERN = new RegExp(
+  `(?:over|above|more than|at least|starting (?:at|from))\\s*${AMOUNT}`,
+  'u',
+)
+const BETWEEN_PRICE_PATTERN = new RegExp(
+  `between\\s*${AMOUNT}\\s*(?:and|to)\\s*${AMOUNT}`,
+  'u',
+)
 
 /** Words that carry no meaning in a product query. */
 const QUERY_NOISE: ReadonlySet<string> = new Set([
   'me', 'my', 'a', 'an', 'the', 'some', 'any', 'of', 'for', 'please',
   'product', 'products', 'item', 'items', 'something', 'anything',
   'that', 'is', 'are', 'with', 'in', 'and', 'priced', 'price', 'cost',
-  'costing', 'costs', 'dollars', 'dollar', 'rupees', 'rs', 'bucks',
+  'costing', 'costs', 'rupees', 'rupee', 'rs', 'inr', 'dollars', 'bucks',
 ])
 
 /* ------------------------------------------------------------------ */
@@ -195,8 +212,8 @@ function extractAttributes(text: string): {
  * tokens: price, then size, then brand, then attributes. Whatever survives is
  * the product query.
  *
- * Price is consumed before anything else so the "5" in "under $5" can never
- * be mistaken for a size or a quantity.
+ * Price is consumed before anything else so the "500" in "under ₹500" can
+ * never be mistaken for a size or a quantity.
  */
 export function extractSearchFilters(
   text: string,
@@ -327,11 +344,6 @@ export function searchProducts(
 /* Presentation helpers                                                */
 /* ------------------------------------------------------------------ */
 
-/** "$5", "$4.99" — trailing zeroes trimmed. */
-export function formatPrice(value: number): string {
-  return `$${Number.isInteger(value) ? value : value.toFixed(2)}`
-}
-
 export function formatSize(size: ProductSize): string {
   return `${size.value} ${size.unit}`
 }
@@ -354,14 +366,14 @@ export function describeFilters(filters: SearchFilters): FilterChip[] {
   if (filters.maxPrice !== null) {
     chips.push({
       id: 'maxPrice',
-      label: `Under ${formatPrice(filters.maxPrice)}`,
+      label: `Under ${formatCurrency(filters.maxPrice)}`,
       field: 'maxPrice',
     })
   }
   if (filters.minPrice !== null) {
     chips.push({
       id: 'minPrice',
-      label: `Over ${formatPrice(filters.minPrice)}`,
+      label: `Over ${formatCurrency(filters.minPrice)}`,
       field: 'minPrice',
     })
   }

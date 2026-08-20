@@ -1,6 +1,7 @@
 import { effectivePrice } from '../data/catalog'
-import { describeFilters, formatPrice, formatSize } from '../lib/search'
+import { formatCurrency } from '../lib/currency'
 import { toDisplayName } from '../lib/normalize'
+import { describeFilters, formatSize } from '../lib/search'
 import { useShopping } from '../state/ShoppingContext'
 import type { Product } from '../types'
 
@@ -18,9 +19,9 @@ function ProductCard({ product }: { product: Product }) {
 
         <p className="product__meta">
           {product.size && <span>{formatSize(product.size)}</span>}
-          <span className="product__price">{formatPrice(price)}</span>
+          <span className="product__price">{formatCurrency(price)}</span>
           {product.onSale && product.salePrice !== null && (
-            <span className="product__was">{formatPrice(product.price)}</span>
+            <span className="product__was">{formatCurrency(product.price)}</span>
           )}
         </p>
 

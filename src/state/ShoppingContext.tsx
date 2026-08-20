@@ -246,7 +246,7 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
             return {
               command,
               status: 'error',
-              message: 'Tell me what to search for, such as “find toothpaste under $5”.',
+              message: 'Tell me what to search for, such as “find toothpaste under ₹500”.',
             }
           }
 
