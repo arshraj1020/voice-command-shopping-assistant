@@ -14,6 +14,7 @@ import { createDemoHistory } from '../data/demoHistory'
 import { getLexicon } from '../data/lexicon'
 import { createId } from '../lib/id'
 import { parseCommand } from '../lib/parser'
+import { containsNonLatinLetters } from '../lib/normalize'
 import { hasAnyFilter, searchProducts } from '../lib/search'
 import {
   loadHistory,
@@ -26,6 +27,7 @@ import {
 import { findItemByName, shoppingReducer } from './shoppingReducer'
 import type {
   CommandResult,
+  CommandSource,
   FilterField,
   History,
   LangCode,
@@ -66,7 +68,7 @@ interface ShoppingContextValue {
   toggleChecked: (id: string) => void
   clearList: () => void
   /** Parse a typed or spoken command and apply it to the list. */
-  runCommand: (input: string) => CommandResult
+  runCommand: (input: string, source?: CommandSource) => CommandResult
   /** The most recent command outcome, shared by the voice and text paths. */
   lastResult: CommandResult | null
   language: LangCode
@@ -209,6 +211,19 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       }
 
       if (command.confidence === 'low') {
+        /*
+         * An item still carrying non-Latin letters never resolved through the
+         * lexicon, so it is unidentifiable rather than merely ambiguous — and
+         * saying so is more useful than "try one item at a time".
+         */
+        if (command.item && containsNonLatinLetters(command.item)) {
+          return {
+            command,
+            status: 'error',
+            message: "I couldn't identify that item. Please try again.",
+          }
+        }
+
         return {
           command,
           status: 'error',
@@ -332,8 +347,8 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       updateQuantity,
       toggleChecked: (id) => dispatch({ type: 'TOGGLE_CHECKED', payload: { id } }),
       clearList,
-      runCommand: (input) => {
-        const result = execute(parseCommand(input, language))
+      runCommand: (input, source = 'text') => {
+        const result = execute(parseCommand(input, language, source))
         publishResult(result)
         return result
       },

@@ -187,6 +187,29 @@ export function canonicalizeItemName(raw: string): string {
   return singularizePhrase(normalizeItemName(raw))
 }
 
+const ANY_LETTER = /\p{L}/u
+const LATIN_LETTER = /\p{Script=Latin}/u
+
+/**
+ * True when a name still contains letters outside the Latin script.
+ *
+ * The lexicon's product-alias table is the only bridge from a non-Latin
+ * script into the canonical English namespace the list, categories, and
+ * catalog all share. A name that survives alias resolution with non-Latin
+ * letters intact therefore resolved to nothing: it cannot be categorised,
+ * cannot merge with its English equivalent, and cannot be searched. From a
+ * speech transcript it is far more likely to be a misrecognised word — a
+ * name, a filler — than a product the user meant.
+ */
+export function containsNonLatinLetters(text: string): boolean {
+  for (const character of text) {
+    if (!ANY_LETTER.test(character)) continue
+    if (!LATIN_LETTER.test(character)) return true
+  }
+
+  return false
+}
+
 /* ------------------------------------------------------------------ */
 /* Speech transcript repair                                            */
 /* ------------------------------------------------------------------ */

@@ -132,6 +132,15 @@ export type LangCode = 'en' | 'hi'
 /** How sure the parser is. Low-confidence commands are never executed. */
 export type Confidence = 'high' | 'low'
 
+/**
+ * Where a command came from.
+ *
+ * Provenance changes how much the parser trusts an item name: a speech
+ * transcript is a guess, while typed text — including a transcript the user
+ * has read and deliberately sent — is an explicit instruction.
+ */
+export type CommandSource = 'voice' | 'text'
+
 /** Filters carried by a search command. */
 export interface SearchFilters {
   /** Free-text product terms left after every other filter is consumed. */

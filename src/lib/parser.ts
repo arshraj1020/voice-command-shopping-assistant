@@ -2,6 +2,7 @@ import { getLexicon, type LanguageRules } from '../data/lexicon'
 import {
   applyNumberWords,
   canonicalizeItemName,
+  containsNonLatinLetters,
   normalizeText,
 } from './normalize'
 import {
@@ -11,7 +12,13 @@ import {
   type QuantityPatterns,
 } from './quantity'
 import { extractSearchFilters, hasAnyFilter } from './search'
-import type { Confidence, Intent, LangCode, ParsedCommand } from '../types'
+import type {
+  CommandSource,
+  Confidence,
+  Intent,
+  LangCode,
+  ParsedCommand,
+} from '../types'
 
 /**
  * Rule-based command parser.
@@ -49,15 +56,30 @@ function quantityPatternsFor(rules: LanguageRules): QuantityPatterns {
  * anything that does not look like a single product is downgraded to `low`
  * and the execution layer refuses to touch the list.
  *
- *   - too many words   -> the sentence was not really a command
- *   - a leftover digit -> a second quantity we did not account for
- *   - a conjunction    -> a multi-item command, not supported yet
+ *   - too many words     -> the sentence was not really a command
+ *   - a leftover digit   -> a second quantity we did not account for
+ *   - a conjunction      -> a multi-item command, not supported yet
+ *   - unresolved script  -> see below
  */
-function assessConfidence(item: string, rules: LanguageRules): Confidence {
+function assessConfidence(
+  item: string,
+  rules: LanguageRules,
+  source: CommandSource,
+): Confidence {
   const words = item.split(' ')
   if (words.length > MAX_ITEM_WORDS) return 'low'
   if (/\d/.test(item)) return 'low'
   if (words.some((word) => rules.conjunctions.includes(word))) return 'low'
+
+  /*
+   * A *spoken* name that is still in a non-Latin script resolved to nothing
+   * in the alias table, so it cannot be categorised or matched — and from a
+   * transcript it is most likely a misrecognised word rather than a product.
+   * Typed text is exempt: there the script is a deliberate choice, which is
+   * also what lets the user confirm a staged transcript by sending it.
+   */
+  if (source === 'voice' && containsNonLatinLetters(item)) return 'low'
+
   return 'high'
 }
 
@@ -133,6 +155,7 @@ function buildItemCommand(
   payload: string,
   raw: string,
   rules: LanguageRules,
+  source: CommandSource,
 ): ParsedCommand {
   const numeric = applyNumberWords(payload, rules.numberWords)
   const { quantity, unit, rest } = extractQuantity(numeric, quantityPatternsFor(rules))
@@ -148,7 +171,7 @@ function buildItemCommand(
     filters: null,
     language: rules.code,
     raw,
-    confidence: assessConfidence(item, rules),
+    confidence: assessConfidence(item, rules, source),
   }
 }
 
@@ -158,7 +181,11 @@ function buildItemCommand(
  * The same function serves the text input and the speech transcript, so both
  * paths behave identically once the words have been captured.
  */
-export function parseCommand(raw: string, language: LangCode = 'en'): ParsedCommand {
+export function parseCommand(
+  raw: string,
+  language: LangCode = 'en',
+  source: CommandSource = 'text',
+): ParsedCommand {
   const rules = getLexicon(language)
   const text = normalizeText(raw)
   if (!text) return unknownCommand(raw, rules.code)
@@ -193,13 +220,13 @@ export function parseCommand(raw: string, language: LangCode = 'en'): ParsedComm
         item,
         quantity,
         unit: null,
-        confidence: assessConfidence(item, rules),
+        confidence: assessConfidence(item, rules, source),
       }
     }
   }
 
   const remove = matchFirst(rules.patterns.remove, text)
-  if (remove) return buildItemCommand('remove', remove[1] ?? '', raw, rules)
+  if (remove) return buildItemCommand('remove', remove[1] ?? '', raw, rules, source)
 
   const search = matchFirst(rules.patterns.search, text)
   if (search) {
@@ -220,7 +247,7 @@ export function parseCommand(raw: string, language: LangCode = 'en'): ParsedComm
   }
 
   const add = matchFirst(rules.patterns.add, text)
-  if (add) return buildItemCommand('add', add[1] ?? '', raw, rules)
+  if (add) return buildItemCommand('add', add[1] ?? '', raw, rules, source)
 
   return unknownCommand(raw, rules.code)
 }

@@ -4,6 +4,7 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { cleanTranscript } from '../lib/normalize'
 import { parseCommand } from '../lib/parser'
 import { useShopping } from '../state/ShoppingContext'
+import type { CommandSource } from '../types'
 import CommandFeedback from './CommandFeedback'
 import CommandInput from './CommandInput'
 import MicButton from './MicButton'
@@ -49,14 +50,14 @@ export default function VoiceControls() {
    * list is safe either way.
    */
   const submitCommand = useCallback(
-    (text: string) => {
+    (text: string, source: CommandSource) => {
       const input = text.trim()
       if (!input) return
 
       // Any new command supersedes a confirmation still waiting on screen.
       setPendingClear(null)
 
-      const parsed = parseCommand(input, language)
+      const parsed = parseCommand(input, language, source)
 
       if (parsed.intent === 'clear' && parsed.confidence === 'high') {
         setPendingClear(input)
@@ -64,7 +65,7 @@ export default function VoiceControls() {
         return
       }
 
-      const result = runCommand(input)
+      const result = runCommand(input, source)
 
       if (result.status === 'error') stageForEditing(input)
       else setDraft('')
@@ -86,11 +87,11 @@ export default function VoiceControls() {
       if (cleaned.length === 0) return
 
       const confident = cleaned.find((candidate) => {
-        const parsed = parseCommand(candidate, language)
+        const parsed = parseCommand(candidate, language, 'voice')
         return parsed.intent !== 'unknown' && parsed.confidence === 'high'
       })
 
-      submitCommand(confident ?? cleaned[0])
+      submitCommand(confident ?? cleaned[0], 'voice')
     },
     [language, submitCommand],
   )
@@ -145,7 +146,7 @@ export default function VoiceControls() {
           <CommandInput
             value={draft}
             onChange={setDraft}
-            onSubmit={submitCommand}
+            onSubmit={(value) => submitCommand(value, 'text')}
             focusToken={focusToken}
           />
           <MicButton status={status} onStart={start} onStop={stop} />
