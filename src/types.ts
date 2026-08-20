@@ -49,9 +49,27 @@ export interface ListItem {
   addedAt: number
 }
 
+/**
+ * One product the user has added before.
+ *
+ * `count` is the number of times the item was added, not the quantity — it is
+ * a measure of how routinely the product is bought.
+ */
+export interface HistoryEntry {
+  name: string
+  category: Category
+  count: number
+  /** Epoch milliseconds. */
+  lastAddedAt: number
+}
+
+/** Purchase history, keyed by canonical item name. */
+export type History = Record<string, HistoryEntry>
+
 /** Complete shopping-list state owned by the reducer. */
 export interface ShoppingState {
   items: ListItem[]
+  history: History
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,6 +187,31 @@ export interface FilterChip {
 export interface SearchState {
   filters: SearchFilters
   results: Product[]
+}
+
+/* ------------------------------------------------------------------ */
+/* Smart suggestions                                                   */
+/* ------------------------------------------------------------------ */
+
+/** Why a product is being suggested. Each source stays distinct in the UI. */
+export type SuggestionType = 'substitute' | 'history' | 'sale' | 'seasonal'
+
+/** One recommendation shown to the user. */
+export interface Suggestion {
+  id: string
+  type: SuggestionType
+  /** Canonical name handed to `addItem()`. */
+  name: string
+  /** Title shown on the card — may include a brand. */
+  displayName: string
+  /** Shown verbatim under the title; a suggestion without a reason looks arbitrary. */
+  reason: string
+  /** Catalog product this came from, when there is one. */
+  productId?: string
+  /** Set on substitutes: the list item this would replace. */
+  replacesItemId?: string
+  /** True when the original product is out of stock, so the card is prominent. */
+  urgent?: boolean
 }
 
 /* ------------------------------------------------------------------ */

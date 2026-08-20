@@ -9,13 +9,16 @@ import {
   type ReactNode,
 } from 'react'
 import { CATALOG } from '../data/catalog'
+import { createDemoHistory } from '../data/demoHistory'
 import { getLexicon } from '../data/lexicon'
 import { createId } from '../lib/id'
 import { parseCommand } from '../lib/parser'
 import { hasAnyFilter, searchProducts } from '../lib/search'
 import {
+  loadHistory,
   loadItems,
   loadLanguage,
+  saveHistory,
   saveItems,
   saveLanguage,
 } from '../lib/storage'
@@ -23,6 +26,7 @@ import { findItemByName, shoppingReducer } from './shoppingReducer'
 import type {
   CommandResult,
   FilterField,
+  History,
   LangCode,
   ListItem,
   ParsedCommand,
@@ -30,6 +34,7 @@ import type {
   SearchFilters,
   SearchState,
   ShoppingState,
+  Suggestion,
   Unit,
 } from '../types'
 
@@ -66,13 +71,27 @@ interface ShoppingContextValue {
   search: SearchState | null
   clearSearch: () => void
   removeSearchFilter: (field: FilterField, tag?: ProductTag) => void
+  /** What the user buys routinely. Feeds the suggestion engine. */
+  history: History
+  /** Clear the seeded demo history (and anything learned since). */
+  resetHistory: () => void
+  /** Apply a suggestion: add it, or swap it in for the item it replaces. */
+  acceptSuggestion: (suggestion: Suggestion) => void
 }
 
 const ShoppingContext = createContext<ShoppingContextValue | null>(null)
 
-/** Lazy initialiser — the saved list is read once, on mount. */
+/**
+ * Lazy initialiser — storage is read once, on mount.
+ *
+ * A `null` history means nothing has ever been stored, so the demo history is
+ * seeded. An explicitly emptied history parses to `{}` and is left alone.
+ */
 function init(): ShoppingState {
-  return { items: loadItems() }
+  return {
+    items: loadItems(),
+    history: loadHistory() ?? createDemoHistory(Date.now()),
+  }
 }
 
 export function ShoppingProvider({ children }: { children: ReactNode }) {
@@ -84,6 +103,10 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveItems(state.items)
   }, [state.items])
+
+  useEffect(() => {
+    saveHistory(state.history)
+  }, [state.history])
 
   useEffect(() => {
     saveLanguage(language)
@@ -293,9 +316,30 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       search,
       clearSearch,
       removeSearchFilter,
+      history: state.history,
+      resetHistory: () => dispatch({ type: 'RESET_HISTORY' }),
+      /*
+       * Substitutes carry the item they replace, so accepting one swaps it in
+       * and keeps the quantity and unit. Everything else is a plain add.
+       * Both paths reuse the existing actions — no list logic lives here.
+       */
+      acceptSuggestion: (suggestion) => {
+        const replaced = suggestion.replacesItemId
+          ? state.items.find((item) => item.id === suggestion.replacesItemId)
+          : undefined
+
+        if (replaced) {
+          removeItem(replaced.id)
+          addItem(suggestion.name, replaced.quantity, replaced.unit)
+          return
+        }
+
+        addItem(suggestion.name)
+      },
     }
   }, [
     state.items,
+    state.history,
     language,
     lastResult,
     search,

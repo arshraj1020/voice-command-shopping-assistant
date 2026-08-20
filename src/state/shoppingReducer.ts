@@ -1,6 +1,6 @@
 import { categorizeItem } from '../lib/categorize'
 import { normalizeItemName, toDisplayName } from '../lib/normalize'
-import type { ListItem, ShoppingState, Unit } from '../types'
+import type { Category, History, ListItem, ShoppingState, Unit } from '../types'
 
 export type ShoppingAction =
   | {
@@ -21,8 +21,34 @@ export type ShoppingAction =
   | { type: 'UPDATE_QUANTITY'; payload: { id: string; quantity: number } }
   | { type: 'TOGGLE_CHECKED'; payload: { id: string } }
   | { type: 'CLEAR_LIST' }
+  | { type: 'RESET_HISTORY' }
 
-export const initialShoppingState: ShoppingState = { items: [] }
+export const initialShoppingState: ShoppingState = { items: [], history: {} }
+
+/**
+ * Record one more purchase of an item.
+ *
+ * `count` tracks how many times the item was *added*, not how many units were
+ * bought, so it measures how routine a purchase is.
+ */
+function recordPurchase(
+  history: History,
+  name: string,
+  category: Category,
+  at: number,
+): History {
+  const previous = history[name]
+
+  return {
+    ...history,
+    [name]: {
+      name,
+      category,
+      count: (previous?.count ?? 0) + 1,
+      lastAddedAt: at,
+    },
+  }
+}
 
 /** Look up an item by its canonical name. Pure helper shared with the provider. */
 export function findItemByName(
@@ -64,8 +90,16 @@ export function shoppingReducer(
                 }
               : item,
           ),
+          history: recordPurchase(
+            state.history,
+            canonical,
+            existing.category,
+            addedAt,
+          ),
         }
       }
+
+      const category = categorizeItem(canonical)
 
       const newItem: ListItem = {
         id,
@@ -73,12 +107,18 @@ export function shoppingReducer(
         displayName: toDisplayName(name),
         quantity: amount,
         unit: unit ?? null,
-        category: categorizeItem(canonical),
+        category,
         checked: false,
         addedAt,
       }
 
-      return { ...state, items: [...state.items, newItem] }
+      return {
+        ...state,
+        items: [...state.items, newItem],
+        // Every add — typed, spoken, from search, or from a suggestion —
+        // reaches this one place, so history can never miss one.
+        history: recordPurchase(state.history, canonical, category, addedAt),
+      }
     }
 
     case 'REMOVE_ITEM': {
@@ -115,7 +155,13 @@ export function shoppingReducer(
     }
 
     case 'CLEAR_LIST':
+      // Clearing the list does not erase what the user usually buys.
       return state.items.length === 0 ? state : { ...state, items: [] }
+
+    case 'RESET_HISTORY':
+      return Object.keys(state.history).length === 0
+        ? state
+        : { ...state, history: {} }
 
     default:
       return state

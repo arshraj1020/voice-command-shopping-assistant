@@ -18,6 +18,7 @@ A voice-based shopping list manager that lets users add, remove, and modify item
 - [Natural-Language Commands](#natural-language-commands)
 - [Voice Input](#voice-input)
 - [Product Search](#product-search)
+- [Smart Suggestions](#smart-suggestions)
 - [Project Status](#project-status)
 - [Implementation Roadmap](#implementation-roadmap)
 - [Assignment Constraints](#assignment-constraints)
@@ -65,9 +66,9 @@ The features required by the assignment brief. Ticked items are implemented; the
 
 ### Smart Suggestions
 
-- [ ] **History-based product recommendations** — suggest items based on previous additions and frequency
-- [ ] **Seasonal / on-sale recommendations** — surface products that are in season or discounted
-- [ ] **Product substitutes** — offer alternatives when an item is unavailable or another option may suit the user
+- [x] **History-based product recommendations** — suggest items based on previous additions and frequency
+- [x] **Seasonal / on-sale recommendations** — surface products that are in season or discounted
+- [x] **Product substitutes** — offer alternatives when an item is unavailable or another option may suit the user
 
 ### Shopping List Management
 
@@ -278,6 +279,41 @@ results  →  removable filter chips + product cards
 
 Product prices are **simulated sample values represented in Indian Rupees (INR)** for demonstration purposes. They are plausible retail-style figures invented for this assessment — not live Indian retail pricing, and not real inventory. There is no product API and no backend. Prices are stored as plain numbers; `Intl.NumberFormat('en-IN')` handles display formatting, so values render as ₹95 and ₹1,249 with Indian digit grouping.
 
+## Smart Suggestions
+
+Four independent generators feed one panel. Each keeps its own reason, so it is always clear *why* something is being recommended.
+
+```
+shopping list + history + catalog + seasonal data + substitute map
+                              ↓
+                    generateSuggestions()          ← pure, deterministic
+                              ↓
+        substitute → history → sale → seasonal     ← priority order
+                              ↓
+              deduplicate by name, cap at 6
+```
+
+| Source | Trigger | Example reason |
+|---|---|---|
+| **History** | added ≥ 2 times, not currently on the list | *You buy this often* |
+| **Sale** | catalog `onSale`, in stock, not on the list | *On sale — ₹45 (was ₹60)* |
+| **Seasonal** | in season for the current month | *In season now* |
+| **Substitute** | an item on the list has a curated alternative | *Dairy-free alternative* |
+
+**Ranking is deliberately plain** — history by frequency then recency, sales by deepest discount, seasonal by the month table. No model, no scoring heuristics that can't be read off the page.
+
+**Deduplication by canonical name.** A product that qualifies under several sources appears once, under its highest-priority reason.
+
+**Substitutes have two strengths.** If *every* catalog entry for an item is out of stock, the card is prominent and names the unavailable product (*"Amul Butter is out of stock — dairy-free alternative"*). If the item is available, it is a softer alternative (*"Instead of milk — dairy-free alternative"*). Both offer **Replace**, which removes the original and adds the substitute, carrying the quantity and unit across.
+
+**History is a real feedback loop.** Every add — typed, spoken, from a search result, or from a suggestion — flows through the same `ADD_ITEM` action, which is where the count is incremented. There is no separate tracking path that could miss one. Suggestions recompute from that history, so recommendations sharpen as the list is used. Clearing the list does *not* erase history.
+
+### Disclosures
+
+- **The purchase history is seeded demo data.** A brand-new browser has no history, which would leave this feature invisible. On first run only, a small synthetic history (milk, bread, eggs, bananas, rice, apples, toothpaste) is written so the recommendations can be seen immediately. **It is not real user history.** The Suggestions panel has a **Reset history** button that clears it permanently — the storage layer distinguishes "never stored" from "deliberately emptied", so the seed does not come back.
+- **The catalog, its prices, its sale flags, and its stock levels are simulated sample data** written for this assessment. `inStock` is a static field, not a live inventory feed, and prices are invented INR values rather than real Indian retail pricing.
+- **Seasonality assumes the Northern Hemisphere.** The assignment does not specify a region, and there is no seasonal API — `src/data/seasonal.ts` is a small static month-to-produce table written for the demo.
+
 ## Project Status
 
 🚧 **Currently in development.** Implementation will be completed in phases according to the technical assessment roadmap.
@@ -289,8 +325,9 @@ Working today:
 - **Voice input** — spoken commands via the browser's Web Speech API, feeding the same parser. See [Voice Input](#voice-input).
 - **English and Hindi** — commands in either language, resolving to one canonical list. See [Multilingual Scope](#multilingual-scope).
 - **Voice product search** — spoken queries with brand, size, price-range, and attribute filters. See [Product Search](#product-search).
+- **Smart suggestions** — history-based recommendations, seasonal and on-sale suggestions, and product substitutes. See [Smart Suggestions](#smart-suggestions).
 
-Not implemented yet: smart suggestions (history-based recommendations, seasonal/on-sale suggestions, and product substitutes) and final UI polish. The application is not deployed yet.
+Still outstanding: final UI polish, a full testing pass, and deployment. The application is not deployed yet.
 
 Browser support has not been formally tested yet, so this README makes no compatibility claims. The app feature-detects speech recognition at startup and falls back to the text command box wherever it is unavailable. The [Browser Support](#browser-support) section will be filled in once real testing is done.
 
@@ -304,7 +341,7 @@ Browser support has not been formally tested yet, so this README makes no compat
 | 4 | Voice recognition | Complete |
 | 5 | Multilingual support | Complete (English + Hindi) |
 | 6 | Voice search | Complete |
-| 7 | Smart suggestions | Not started |
+| 7 | Smart suggestions | Complete |
 | 8 | UI / UX | Not started |
 | 9 | Testing | Not started |
 | 10 | Deployment | Not started |

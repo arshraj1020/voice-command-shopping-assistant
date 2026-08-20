@@ -3,11 +3,12 @@ import { isLangCode } from '../data/lexicon'
 import { categorizeItem } from './categorize'
 import { createId } from './id'
 import { normalizeItemName, toDisplayName } from './normalize'
-import type { Category, LangCode, ListItem, Unit } from '../types'
+import type { Category, History, LangCode, ListItem, Unit } from '../types'
 
 /** Versioned so a future schema change cannot be fed stale data. */
 export const STORAGE_KEY = 'vcsa.list.v1'
 export const LANGUAGE_KEY = 'vcsa.language.v1'
+export const HISTORY_KEY = 'vcsa.history.v1'
 
 const VALID_UNITS = [
   'piece', 'bottle', 'can', 'pack', 'box', 'dozen', 'g', 'kg', 'ml', 'l',
@@ -98,6 +99,78 @@ export function saveItems(items: readonly ListItem[]): void {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
   } catch {
     // Quota exceeded or storage disabled — nothing useful to do here.
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Shopping history                                                    */
+/* ------------------------------------------------------------------ */
+
+function sanitizeHistoryEntry(value: unknown): History[string] | null {
+  if (!isRecord(value)) return null
+  if (typeof value.name !== 'string') return null
+
+  const name = normalizeItemName(value.name)
+  if (!name) return null
+
+  const count =
+    typeof value.count === 'number' && Number.isFinite(value.count)
+      ? Math.max(1, Math.floor(value.count))
+      : 1
+
+  return {
+    name,
+    category: toCategory(value.category, name),
+    count,
+    lastAddedAt:
+      typeof value.lastAddedAt === 'number' && Number.isFinite(value.lastAddedAt)
+        ? value.lastAddedAt
+        : Date.now(),
+  }
+}
+
+/**
+ * Pure parser for stored history.
+ *
+ * Returns `null` when there is nothing usable stored — which the provider
+ * treats as "seed the demo history". An explicitly emptied history parses to
+ * `{}` instead, so clearing it makes the seed stay gone.
+ */
+export function parseStoredHistory(raw: string | null): History | null {
+  if (raw === null) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+
+  if (!isRecord(parsed)) return null
+
+  const history: History = {}
+  for (const value of Object.values(parsed)) {
+    const entry = sanitizeHistoryEntry(value)
+    if (entry) history[entry.name] = entry
+  }
+
+  return history
+}
+
+/** Read the saved history, or `null` when nothing has ever been stored. */
+export function loadHistory(): History | null {
+  try {
+    return parseStoredHistory(window.localStorage.getItem(HISTORY_KEY))
+  } catch {
+    return null
+  }
+}
+
+export function saveHistory(history: History): void {
+  try {
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
+  } catch {
+    // Storage unavailable — history simply will not survive a reload.
   }
 }
 
