@@ -2,15 +2,21 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MicStatus } from '../types'
 
 /**
- * Thin wrapper around the browser's native Web Speech API.
+ * Managed tap-to-start speech capture, built on the browser's native
+ * Web Speech API.
  *
- * Owns only the microphone lifecycle — it knows nothing about shopping.
- * The transcript is handed to `onResult`, which feeds the same
- * `runCommand()` path the text input uses.
+ * The browser decides when *it* thinks you stopped talking, and it is wrong
+ * often enough to be a problem: a hesitation mid-command ends the session and
+ * truncates the sentence. So this hook owns the session lifecycle instead.
  *
- * Push-to-talk, not always-listening: mobile browsers terminate recognition
- * on every pause, so a continuous session is unreliable in exactly the place
- * this app is meant to be used.
+ *   - `continuous: true` keeps the recogniser open across pauses
+ *   - our own silence timer decides when the user actually finished
+ *   - a natural `onend` restarts transparently, invisible to the user
+ *   - final results accumulate across those restarts
+ *   - the command is delivered exactly once, when the session really ends
+ *
+ * The hook knows nothing about shopping, parsing, or language vocabulary. It
+ * hands back the candidate transcripts and the caller decides what they mean.
  */
 
 /* ------------------------------------------------------------------ */
@@ -80,6 +86,28 @@ function isSupported(): boolean {
 }
 
 /* ------------------------------------------------------------------ */
+/* Tuning                                                              */
+/* ------------------------------------------------------------------ */
+
+/** Silence after which we treat the utterance as finished. */
+const SILENCE_MS = 2000
+
+/** Hard ceiling on one listening session — the mic is never open longer. */
+const MAX_SESSION_MS = 15000
+
+/** Safety net if `stop()` never produces an `onend`. */
+const STOP_GRACE_MS = 1000
+
+/** How long `processing` stays visible, so the transition is perceivable. */
+const PROCESSING_HOLD_MS = 400
+
+/** Guards against an endless restart loop if the browser keeps ending. */
+const MAX_RESTARTS = 8
+
+/** Ranked hypotheses to request; the caller re-ranks them with the parser. */
+const MAX_ALTERNATIVES = 3
+
+/* ------------------------------------------------------------------ */
 /* Messages                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -92,8 +120,9 @@ const PERMISSION_MESSAGE =
 const GENERIC_MESSAGE =
   'Something went wrong with voice input. Try again, or use the text command box.'
 
+const NO_SPEECH_MESSAGE = 'No speech detected. Try again.'
+
 const ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  'no-speech': 'No speech detected. Try again.',
   'audio-capture': 'No microphone was found. Check your device audio settings.',
   network:
     'The speech service could not be reached. Check your connection, or use the text command box.',
@@ -101,8 +130,41 @@ const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   'service-not-allowed': PERMISSION_MESSAGE,
 }
 
-/** How long `processing` stays visible, so the transition is perceivable. */
-const PROCESSING_HOLD_MS = 400
+/* ------------------------------------------------------------------ */
+/* Candidate assembly                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Build whole-utterance candidates from the per-chunk alternatives.
+ *
+ * Candidate *n* takes alternative *n* from every chunk (falling back to the
+ * top alternative where a chunk offered fewer), so each candidate is a
+ * coherent reading of the entire command rather than a mix-and-match.
+ */
+function buildCandidates(chunks: readonly string[][], interim: string): string[] {
+  if (chunks.length === 0) {
+    const trimmed = interim.trim()
+    return trimmed ? [trimmed] : []
+  }
+
+  const depth = Math.min(
+    MAX_ALTERNATIVES,
+    Math.max(...chunks.map((alternatives) => alternatives.length)),
+  )
+
+  const candidates: string[] = []
+  for (let rank = 0; rank < depth; rank += 1) {
+    const text = chunks
+      .map((alternatives) => alternatives[rank] ?? alternatives[0] ?? '')
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    if (text) candidates.push(text)
+  }
+
+  return [...new Set(candidates)]
+}
 
 /* ------------------------------------------------------------------ */
 /* Hook                                                                */
@@ -111,8 +173,11 @@ const PROCESSING_HOLD_MS = 400
 interface UseSpeechRecognitionOptions {
   /** BCP-47 tag, e.g. "en-US" or "hi-IN". Applied to the next session. */
   lang: string
-  /** Called once per completed utterance, with the final transcript. */
-  onResult: (transcript: string) => void
+  /**
+   * Called **once per session**, never per interim or final result, with the
+   * ranked whole-utterance candidates. Empty sessions do not call it.
+   */
+  onResult: (candidates: string[]) => void
 }
 
 interface UseSpeechRecognitionResult {
@@ -139,13 +204,25 @@ export function useSpeechRecognition({
   )
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null)
+
+  // Session bookkeeping. Refs, not state: the recognition handlers are
+  // attached once per recogniser and must never read a stale value.
+  const sessionActiveRef = useRef(false)
+  const stopRequestedRef = useRef(false)
+  const deliveredRef = useRef(false)
+  const restartsRef = useRef(0)
+  const chunksRef = useRef<string[][]>([])
+  const interimRef = useRef('')
+
+  const silenceTimerRef = useRef<number | null>(null)
+  const sessionTimerRef = useRef<number | null>(null)
+  const graceTimerRef = useRef<number | null>(null)
   const holdTimerRef = useRef<number | null>(null)
-  const finalReceivedRef = useRef(false)
+
   const statusRef = useRef<MicStatus>(status)
   const onResultRef = useRef(onResult)
   const langRef = useRef(lang)
 
-  // Kept in refs so the recognition handlers never read a stale value.
   useEffect(() => {
     onResultRef.current = onResult
   }, [onResult])
@@ -159,17 +236,200 @@ export function useSpeechRecognition({
     setStatus(next)
   }, [])
 
-  const clearHold = useCallback(() => {
-    if (holdTimerRef.current !== null) {
-      window.clearTimeout(holdTimerRef.current)
-      holdTimerRef.current = null
+  const clearTimer = useCallback((ref: React.MutableRefObject<number | null>) => {
+    if (ref.current !== null) {
+      window.clearTimeout(ref.current)
+      ref.current = null
     }
   }, [])
 
-  const start = useCallback(() => {
-    const Recognition = getRecognitionConstructor()
+  const clearSessionTimers = useCallback(() => {
+    clearTimer(silenceTimerRef)
+    clearTimer(sessionTimerRef)
+    clearTimer(graceTimerRef)
+  }, [clearTimer])
 
+  /** Detach handlers and abort, so a dead recogniser can never call back. */
+  const teardownRecognition = useCallback(() => {
+    const recognition = recognitionRef.current
+    recognitionRef.current = null
+    if (!recognition) return
+
+    recognition.onresult = null
+    recognition.onerror = null
+    recognition.onend = null
+
+    try {
+      recognition.abort()
+    } catch {
+      // Already finished.
+    }
+  }, [])
+
+  /**
+   * End the session exactly once and, if there is anything to say, hand the
+   * candidates to the caller. Every exit path funnels through here, which is
+   * what makes duplicate execution impossible.
+   */
+  const finishSession = useCallback(
+    (deliver: boolean) => {
+      if (deliveredRef.current) return
+      deliveredRef.current = true
+      sessionActiveRef.current = false
+
+      clearSessionTimers()
+
+      const candidates = buildCandidates(chunksRef.current, interimRef.current)
+      chunksRef.current = []
+      interimRef.current = ''
+      setInterimTranscript('')
+
+      if (!deliver) return
+
+      if (candidates.length === 0) {
+        setErrorMessage(NO_SPEECH_MESSAGE)
+        applyStatus('error')
+        return
+      }
+
+      applyStatus('processing')
+      onResultRef.current(candidates)
+
+      holdTimerRef.current = window.setTimeout(() => {
+        holdTimerRef.current = null
+        // A later error state must not be overwritten by the hold expiring.
+        if (statusRef.current === 'processing') applyStatus('idle')
+      }, PROCESSING_HOLD_MS)
+    },
+    [applyStatus, clearSessionTimers],
+  )
+
+  /** Ask the recogniser to wrap up, with a grace period as a safety net. */
+  const requestStop = useCallback(() => {
+    stopRequestedRef.current = true
+
+    const recognition = recognitionRef.current
+    if (!recognition) {
+      finishSession(true)
+      return
+    }
+
+    try {
+      recognition.stop()
+    } catch {
+      finishSession(true)
+      return
+    }
+
+    clearTimer(graceTimerRef)
+    graceTimerRef.current = window.setTimeout(() => {
+      graceTimerRef.current = null
+      finishSession(true)
+    }, STOP_GRACE_MS)
+  }, [clearTimer, finishSession])
+
+  /** Restarted on every result — this is our end-of-speech detector. */
+  const armSilenceTimer = useCallback(() => {
+    clearTimer(silenceTimerRef)
+    silenceTimerRef.current = window.setTimeout(() => {
+      silenceTimerRef.current = null
+      requestStop()
+    }, SILENCE_MS)
+  }, [clearTimer, requestStop])
+
+  /**
+   * Open one underlying recogniser. Called on `start()` and again on each
+   * transparent restart; the session state around it is untouched.
+   */
+  const openRecognition = useCallback(() => {
+    const Recognition = getRecognitionConstructor()
     if (!Recognition) {
+      setErrorMessage(UNSUPPORTED_MESSAGE)
+      applyStatus('unsupported')
+      return
+    }
+
+    const recognition = new Recognition()
+    recognition.lang = langRef.current
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.maxAlternatives = MAX_ALTERNATIVES
+
+    recognition.onresult = (event) => {
+      let interim = ''
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index]
+
+        if (result.isFinal) {
+          const alternatives: string[] = []
+          for (let rank = 0; rank < result.length && rank < MAX_ALTERNATIVES; rank += 1) {
+            const text = result[rank]?.transcript?.trim()
+            if (text) alternatives.push(text)
+          }
+          // Accumulate; never execute here. The session decides when it ends.
+          if (alternatives.length > 0) chunksRef.current.push(alternatives)
+        } else {
+          interim += result[0]?.transcript ?? ''
+        }
+      }
+
+      interimRef.current = interim
+      setInterimTranscript(interim.trim())
+
+      // Any speech at all resets the clock.
+      armSilenceTimer()
+    }
+
+    recognition.onerror = (event) => {
+      // Aborting is what teardown does; it is not a failure.
+      if (event.error === 'aborted') return
+
+      if (event.error === 'no-speech') {
+        // Not an error yet — if we already captured words, deliver them.
+        stopRequestedRef.current = true
+        return
+      }
+
+      const denied =
+        event.error === 'not-allowed' || event.error === 'service-not-allowed'
+
+      setErrorMessage(ERROR_MESSAGES[event.error] ?? GENERIC_MESSAGE)
+      applyStatus(denied ? 'denied' : 'error')
+      stopRequestedRef.current = true
+      finishSession(false)
+    }
+
+    recognition.onend = () => {
+      recognitionRef.current = null
+
+      if (!sessionActiveRef.current) return
+
+      if (stopRequestedRef.current || restartsRef.current >= MAX_RESTARTS) {
+        finishSession(true)
+        return
+      }
+
+      // The browser ended on its own mid-command. Reopen silently — the user
+      // stays in "Listening…" and the accumulated transcript is preserved.
+      restartsRef.current += 1
+      openRecognition()
+    }
+
+    recognitionRef.current = recognition
+
+    try {
+      recognition.start()
+    } catch {
+      recognitionRef.current = null
+      setErrorMessage(GENERIC_MESSAGE)
+      applyStatus('error')
+      finishSession(false)
+    }
+  }, [applyStatus, armSilenceTimer, finishSession])
+
+  const start = useCallback(() => {
+    if (!isSupported()) {
       setErrorMessage(UNSUPPORTED_MESSAGE)
       applyStatus('unsupported')
       return
@@ -179,118 +439,53 @@ export function useSpeechRecognition({
       return
     }
 
-    clearHold()
+    clearTimer(holdTimerRef)
+    clearSessionTimers()
+    teardownRecognition()
+
+    sessionActiveRef.current = true
+    stopRequestedRef.current = false
+    deliveredRef.current = false
+    restartsRef.current = 0
+    chunksRef.current = []
+    interimRef.current = ''
+
     setErrorMessage(null)
     setInterimTranscript('')
-    finalReceivedRef.current = false
+    applyStatus('listening')
 
-    const recognition = new Recognition()
-    recognition.lang = langRef.current
-    recognition.continuous = false
-    recognition.interimResults = true
-    recognition.maxAlternatives = 1
+    openRecognition()
+    armSilenceTimer()
 
-    recognition.onresult = (event) => {
-      let interim = ''
-      let final = ''
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index]
-        const alternative = result[0]
-        const transcript = alternative ? alternative.transcript : ''
-
-        if (result.isFinal) final += transcript
-        else interim += transcript
-      }
-
-      if (interim) setInterimTranscript(interim)
-
-      const transcript = final.trim()
-      if (!transcript) return
-
-      finalReceivedRef.current = true
-      setInterimTranscript(transcript)
-      applyStatus('processing')
-      onResultRef.current(transcript)
-    }
-
-    recognition.onerror = (event) => {
-      // Aborting is what `stop()` does; it is not a failure.
-      if (event.error === 'aborted') return
-
-      setErrorMessage(ERROR_MESSAGES[event.error] ?? GENERIC_MESSAGE)
-      applyStatus(
-        event.error === 'not-allowed' || event.error === 'service-not-allowed'
-          ? 'denied'
-          : 'error',
-      )
-    }
-
-    recognition.onend = () => {
-      recognitionRef.current = null
-
-      // Leave a reported failure on screen rather than silently resetting.
-      if (statusRef.current === 'denied' || statusRef.current === 'error') return
-
-      if (finalReceivedRef.current) {
-        holdTimerRef.current = window.setTimeout(() => {
-          holdTimerRef.current = null
-          applyStatus('idle')
-        }, PROCESSING_HOLD_MS)
-        return
-      }
-
-      applyStatus('idle')
-    }
-
-    recognitionRef.current = recognition
-
-    try {
-      recognition.start()
-      applyStatus('listening')
-    } catch {
-      // start() throws if a session is somehow already running.
-      recognitionRef.current = null
-      setErrorMessage(GENERIC_MESSAGE)
-      applyStatus('error')
-    }
-  }, [applyStatus, clearHold])
+    // The microphone is never open longer than this, whatever happens.
+    sessionTimerRef.current = window.setTimeout(() => {
+      sessionTimerRef.current = null
+      requestStop()
+    }, MAX_SESSION_MS)
+  }, [
+    applyStatus,
+    armSilenceTimer,
+    clearSessionTimers,
+    clearTimer,
+    openRecognition,
+    requestStop,
+    teardownRecognition,
+  ])
 
   const stop = useCallback(() => {
-    const recognition = recognitionRef.current
-
-    if (!recognition) {
-      if (statusRef.current === 'listening') applyStatus('idle')
-      return
-    }
-
-    try {
-      recognition.stop()
-    } catch {
-      // Already stopped — onend will settle the status.
-    }
-  }, [applyStatus])
+    if (!sessionActiveRef.current) return
+    requestStop()
+  }, [requestStop])
 
   useEffect(
     () => () => {
-      clearHold()
-
-      const recognition = recognitionRef.current
-      if (!recognition) return
-
-      recognition.onresult = null
-      recognition.onerror = null
-      recognition.onend = null
-
-      try {
-        recognition.abort()
-      } catch {
-        // Nothing useful to do while unmounting.
-      }
-
-      recognitionRef.current = null
+      clearTimer(holdTimerRef)
+      clearSessionTimers()
+      sessionActiveRef.current = false
+      deliveredRef.current = true
+      teardownRecognition()
     },
-    [clearHold],
+    [clearSessionTimers, clearTimer, teardownRecognition],
   )
 
   return { supported, status, interimTranscript, errorMessage, start, stop }

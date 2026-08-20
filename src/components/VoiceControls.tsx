@@ -1,6 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { getLexicon } from '../data/lexicon'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { cleanTranscript } from '../lib/normalize'
+import { parseCommand } from '../lib/parser'
 import { useShopping } from '../state/ShoppingContext'
 import CommandFeedback from './CommandFeedback'
 import CommandInput from './CommandInput'
@@ -11,29 +13,127 @@ import TranscriptBar from './TranscriptBar'
  * The command dock: everything the user speaks or types into, pinned to the
  * bottom of the screen.
  *
- * This is the only place speech state lives, so `MicButton`, `TranscriptBar`,
- * and `CommandInput` stay presentational and the shopping state stays free of
- * anything microphone-related.
+ * It owns three things beyond the microphone itself:
+ *
+ *   - **the draft**, so a transcript can be staged in the text input and
+ *     edited rather than executed blind;
+ *   - **alternative selection**, using the parser to re-rank the speech
+ *     engine's hypotheses;
+ *   - **the execution policy** — what runs immediately, what asks first, and
+ *     what waits for the user.
+ *
+ * All mutation still happens through `runCommand`; nothing here touches the
+ * shopping list directly.
  */
 export default function VoiceControls() {
-  const { language, runCommand, lastResult } = useShopping()
+  const { language, runCommand, lastResult, items } = useShopping()
   const rules = getLexicon(language)
 
-  // A spoken command takes exactly the path a typed one does.
-  const handleResult = useCallback(
-    (transcript: string) => {
-      runCommand(transcript)
+  const [draft, setDraft] = useState('')
+  const [focusToken, setFocusToken] = useState(0)
+  /** The pending destructive command, held until the user confirms. */
+  const [pendingClear, setPendingClear] = useState<string | null>(null)
+
+  const stageForEditing = useCallback((text: string) => {
+    setDraft(text)
+    setFocusToken((token) => token + 1)
+  }, [])
+
+  /**
+   * The single entry point for both typed and spoken commands.
+   *
+   * `clear` is the only irreversible command, so it is the only one that asks
+   * first. Everything else executes, and anything the parser could not read
+   * confidently stays in the box for the user to fix — `runCommand` already
+   * refuses to mutate the list on a low-confidence or unknown command, so the
+   * list is safe either way.
+   */
+  const submitCommand = useCallback(
+    (text: string) => {
+      const input = text.trim()
+      if (!input) return
+
+      // Any new command supersedes a confirmation still waiting on screen.
+      setPendingClear(null)
+
+      const parsed = parseCommand(input, language)
+
+      if (parsed.intent === 'clear' && parsed.confidence === 'high') {
+        setPendingClear(input)
+        setDraft(input)
+        return
+      }
+
+      const result = runCommand(input)
+
+      if (result.status === 'error') stageForEditing(input)
+      else setDraft('')
     },
-    [runCommand],
+    [language, runCommand, stageForEditing],
+  )
+
+  /**
+   * One spoken utterance, as ranked candidates.
+   *
+   * Each candidate is repaired first (trailing fillers, repeated seams), then
+   * the parser picks: the first candidate it reads confidently wins. This uses
+   * the parser we already have as a re-ranker for the speech model — the top
+   * acoustic hypothesis is not always the most sensible command.
+   */
+  const handleResult = useCallback(
+    (candidates: string[]) => {
+      const cleaned = candidates.map(cleanTranscript).filter(Boolean)
+      if (cleaned.length === 0) return
+
+      const confident = cleaned.find((candidate) => {
+        const parsed = parseCommand(candidate, language)
+        return parsed.intent !== 'unknown' && parsed.confidence === 'high'
+      })
+
+      submitCommand(confident ?? cleaned[0])
+    },
+    [language, submitCommand],
   )
 
   const { status, interimTranscript, errorMessage, start, stop } =
     useSpeechRecognition({ lang: rules.recognitionLang, onResult: handleResult })
 
+  const confirmClear = useCallback(() => {
+    if (pendingClear) runCommand(pendingClear)
+    setPendingClear(null)
+    setDraft('')
+  }, [pendingClear, runCommand])
+
+  const cancelClear = useCallback(() => {
+    setPendingClear(null)
+    setDraft('')
+  }, [])
+
   return (
     <div className="dock">
       <div className="dock__inner">
-        <CommandFeedback result={lastResult} />
+        {/* Destructive commands never run on a transcript alone. */}
+        {pendingClear ? (
+          <div className="confirm" role="alertdialog" aria-label="Confirm clearing the list">
+            <p className="confirm__text">
+              Clear all {items.length} {items.length === 1 ? 'item' : 'items'}?
+            </p>
+            <div className="confirm__actions">
+              <button type="button" className="btn btn--sm" onClick={cancelClear}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--sm btn--destructive"
+                onClick={confirmClear}
+              >
+                Clear list
+              </button>
+            </div>
+          </div>
+        ) : (
+          <CommandFeedback result={lastResult} />
+        )}
 
         <TranscriptBar
           status={status}
@@ -42,7 +142,12 @@ export default function VoiceControls() {
         />
 
         <div className="dock__row">
-          <CommandInput />
+          <CommandInput
+            value={draft}
+            onChange={setDraft}
+            onSubmit={submitCommand}
+            focusToken={focusToken}
+          />
           <MicButton status={status} onStart={start} onStop={stop} />
         </div>
       </div>

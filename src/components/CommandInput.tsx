@@ -1,18 +1,30 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, type FormEvent } from 'react'
 import { getLexicon } from '../data/lexicon'
 import { useShopping } from '../state/ShoppingContext'
 import { SendIcon } from './Icon'
 
+interface CommandInputProps {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: (value: string) => void
+  /** Incremented by the dock to pull focus here after staging a transcript. */
+  focusToken: number
+}
+
 /**
- * Typed command entry.
+ * The command box.
  *
- * A permanent fallback, not a stopgap: it runs the identical `runCommand`
- * path as speech, so every feature stays reachable when a microphone is
- * unavailable, blocked, or simply inconvenient.
+ * Two jobs, not one: it is the permanent fallback for browsers or situations
+ * without a microphone, *and* the staging surface where a spoken transcript
+ * lands so it can be read and corrected before it runs.
  */
-export default function CommandInput() {
-  const { runCommand, language } = useShopping()
-  const [text, setText] = useState('')
+export default function CommandInput({
+  value,
+  onChange,
+  onSubmit,
+  focusToken,
+}: CommandInputProps) {
+  const { language } = useShopping()
   const inputRef = useRef<HTMLInputElement>(null)
 
   // "/" focuses the command box, as long as the user is not already typing.
@@ -33,34 +45,38 @@ export default function CommandInput() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault()
+  // A staged transcript arrives focused with the caret at the end, so the
+  // most likely next action — fixing the last word — needs no extra tap.
+  useEffect(() => {
+    if (focusToken === 0) return
 
-    const input = text.trim()
+    const input = inputRef.current
     if (!input) return
 
-    const outcome = runCommand(input)
+    input.focus()
+    const end = input.value.length
+    input.setSelectionRange(end, end)
+  }, [focusToken])
 
-    // Keep the text on failure so the user can correct it.
-    if (outcome.status !== 'error') setText('')
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    onSubmit(value)
   }
-
-  const hasText = text.trim().length > 0
 
   return (
     <form className="dock__form" onSubmit={handleSubmit}>
       <input
         ref={inputRef}
         className="dock__field"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
         placeholder={getLexicon(language).placeholder}
         aria-label="Shopping command"
         autoComplete="off"
         enterKeyHint="send"
       />
       {/* The submit button only appears once there is something to send. */}
-      {hasText && (
+      {value.trim().length > 0 && (
         <button type="submit" className="btn btn--icon" aria-label="Run command">
           <SendIcon />
         </button>

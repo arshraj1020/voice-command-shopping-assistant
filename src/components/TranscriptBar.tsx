@@ -11,7 +11,8 @@ interface TranscriptBarProps {
 /** What the status line says in each microphone state. */
 const STATUS_TEXT: Record<MicStatus, string> = {
   idle: 'Tap the mic and speak, or type a command',
-  listening: 'Listening…',
+  // Says out loud that hesitating is safe — the session survives pauses now.
+  listening: 'Listening… pauses are fine',
   processing: 'Working on it…',
   unsupported: '',
   denied: 'Microphone blocked',

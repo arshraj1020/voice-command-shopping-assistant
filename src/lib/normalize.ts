@@ -52,6 +52,23 @@ const INVARIANT_PLURALS: ReadonlySet<string> = new Set([
   'tissues', 'greens', 'groceries', 'scissors', 'clothes', 'jeans', 'grapes',
 ])
 
+/**
+ * Words that carry no meaning when a transcript *ends* on them.
+ *
+ * Speech recognition hallucinates a continuation when audio is cut off
+ * mid-utterance — "add water bottle with" is the classic shape. Trimming is
+ * deliberately trailing-only, so a legitimate command that merely contains one
+ * of these ("add mac and cheese", "take eggs off my list") is never damaged.
+ */
+const TRAILING_FILLERS: ReadonlySet<string> = new Set([
+  'with', 'and', 'to', 'for', 'of', 'the', 'a', 'an', 'in', 'on', 'at',
+  'from', 'by', 'or', 'but', 'so', 'that', 'is', 'it', 'my', 'me',
+  'please', 'um', 'uh', 'er', 'ah', 'like',
+])
+
+/** Longest repeated tail we will collapse, in words. */
+const MAX_REPEAT_WINDOW = 4
+
 /** Escape a literal string for safe use inside a regular expression. */
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -168,4 +185,67 @@ export function singularizePhrase(phrase: string): string {
  */
 export function canonicalizeItemName(raw: string): string {
   return singularizePhrase(normalizeItemName(raw))
+}
+
+/* ------------------------------------------------------------------ */
+/* Speech transcript repair                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Drop dangling connectives from the end of a transcript.
+ *
+ * Only strips from the tail, and never strips the last remaining word, so a
+ * command can be shortened but never emptied.
+ */
+export function trimTrailingFillers(text: string): string {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+
+  while (words.length > 1 && TRAILING_FILLERS.has(words[words.length - 1].toLowerCase())) {
+    words.pop()
+  }
+
+  return words.join(' ')
+}
+
+/**
+ * Collapse an immediately repeated tail.
+ *
+ * When a recognition session is restarted mid-utterance, the browser sometimes
+ * re-emits the words either side of the seam — "add milk add milk". Repeats
+ * are collapsed longest-window-first so the largest duplication wins.
+ */
+export function collapseRepeatedTail(text: string): string {
+  let words = text.trim().split(/\s+/).filter(Boolean)
+
+  // A few passes handle a seam that duplicated more than once.
+  for (let pass = 0; pass < 3; pass += 1) {
+    let collapsed = false
+
+    for (let size = MAX_REPEAT_WINDOW; size >= 1; size -= 1) {
+      if (words.length < size * 2) continue
+
+      const tail = words.slice(-size).join(' ').toLowerCase()
+      const before = words.slice(-size * 2, -size).join(' ').toLowerCase()
+
+      if (tail === before) {
+        words = words.slice(0, -size)
+        collapsed = true
+        break
+      }
+    }
+
+    if (!collapsed) break
+  }
+
+  return words.join(' ')
+}
+
+/**
+ * Repair a raw speech transcript before it reaches the parser.
+ *
+ * Whitespace, then repeated seams, then dangling tail words — in that order,
+ * because collapsing a repeat can expose a new trailing filler.
+ */
+export function cleanTranscript(raw: string): string {
+  return trimTrailingFillers(collapseRepeatedTail(raw.replace(/\s+/g, ' ').trim()))
 }
