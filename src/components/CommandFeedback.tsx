@@ -1,23 +1,18 @@
+import { getLexicon } from '../data/lexicon'
 import type { CommandResult } from '../types'
 
-const EXAMPLES = [
-  'add milk',
-  'add 2 bottles of water',
-  'remove milk',
-  'change apples to 5',
-]
-
 /**
- * Shows what the parser heard and what it understood.
+ * Shows what was heard and what the parser understood.
  *
- * The same panel will display speech transcripts once voice input is added,
- * so the user can always see how a command was interpreted.
+ * The same panel serves typed commands and speech transcripts, so the user
+ * can always see how their words were interpreted.
  */
 export default function CommandFeedback({ result }: { result: CommandResult | null }) {
   if (!result) return null
 
   const { command, status, message } = result
   const understood = command.intent !== 'unknown'
+  const examples = getLexicon(command.language).examples
 
   return (
     <section className={`feedback feedback--${status}`} role="status" aria-live="polite">
@@ -45,7 +40,7 @@ export default function CommandFeedback({ result }: { result: CommandResult | nu
 
       {status === 'error' && (
         <ul className="feedback__examples">
-          {EXAMPLES.map((example) => (
+          {examples.map((example) => (
             <li key={example}>“{example}”</li>
           ))}
         </ul>

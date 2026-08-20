@@ -34,7 +34,7 @@ function containsPhrase(name: string, keyword: string): boolean {
   const afterIndex = index + keyword.length
   const after = afterIndex >= name.length ? ' ' : name[afterIndex]
 
-  return !/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after)
+  return !/[\p{L}\p{M}\p{N}]/u.test(before) && !/[\p{L}\p{M}\p{N}]/u.test(after)
 }
 
 /**

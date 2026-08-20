@@ -1,5 +1,7 @@
 import CommandInput from './components/CommandInput'
+import LanguageSelector from './components/LanguageSelector'
 import ShoppingList from './components/ShoppingList'
+import VoiceControls from './components/VoiceControls'
 import { ShoppingProvider, useShopping } from './state/ShoppingContext'
 
 function Toolbar() {
@@ -23,11 +25,10 @@ export default function App() {
       <main className="app">
         <header className="app__header">
           <h1 className="app__title">Voice Command Shopping Assistant</h1>
-          <p className="app__subtitle">
-            Type a command in plain English. Voice input arrives in a later phase.
-          </p>
+          <LanguageSelector />
         </header>
 
+        <VoiceControls />
         <CommandInput />
         <Toolbar />
         <ShoppingList />

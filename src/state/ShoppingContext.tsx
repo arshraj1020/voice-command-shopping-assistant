@@ -1,17 +1,26 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useReducer,
+  useState,
   type ReactNode,
 } from 'react'
+import { getLexicon } from '../data/lexicon'
 import { createId } from '../lib/id'
 import { parseCommand } from '../lib/parser'
-import { loadItems, saveItems } from '../lib/storage'
+import {
+  loadItems,
+  loadLanguage,
+  saveItems,
+  saveLanguage,
+} from '../lib/storage'
 import { findItemByName, shoppingReducer } from './shoppingReducer'
 import type {
   CommandResult,
+  LangCode,
   ListItem,
   ParsedCommand,
   ShoppingState,
@@ -20,14 +29,6 @@ import type {
 
 /** Units that are counted and therefore pluralise: "2 bottles of water". */
 const COUNTABLE_UNITS: readonly Unit[] = ['bottle', 'can', 'pack', 'box', 'piece']
-
-const HELP_MESSAGE = [
-  'Try commands like:',
-  '"add milk" · "I need apples" · "I want to buy bananas"',
-  '"add 2 bottles of water" · "add a dozen eggs"',
-  '"remove milk" · "take eggs off my list"',
-  '"change apples to 5" · "clear my list"',
-].join('\n')
 
 /** Human-readable description of an item and its quantity. Pure. */
 function describe(item: string, quantity: number | null, unit: Unit | null): string {
@@ -51,6 +52,10 @@ interface ShoppingContextValue {
   clearList: () => void
   /** Parse a typed or spoken command and apply it to the list. */
   runCommand: (input: string) => CommandResult
+  /** The most recent command outcome, shared by the voice and text paths. */
+  lastResult: CommandResult | null
+  language: LangCode
+  setLanguage: (language: LangCode) => void
 }
 
 const ShoppingContext = createContext<ShoppingContextValue | null>(null)
@@ -62,10 +67,22 @@ function init(): ShoppingState {
 
 export function ShoppingProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(shoppingReducer, undefined, init)
+  const [language, setLanguageState] = useState<LangCode>(loadLanguage)
+  const [lastResult, setLastResult] = useState<CommandResult | null>(null)
 
   useEffect(() => {
     saveItems(state.items)
   }, [state.items])
+
+  useEffect(() => {
+    saveLanguage(language)
+  }, [language])
+
+  const setLanguage = useCallback((next: LangCode) => {
+    setLanguageState(next)
+    // The previous result was interpreted with the old vocabulary.
+    setLastResult(null)
+  }, [])
 
   const value = useMemo<ShoppingContextValue>(() => {
     const addItem = (name: string, quantity?: number, unit?: Unit | null) =>
@@ -85,7 +102,7 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
     /**
      * Execute a parsed command using the existing shopping-list actions.
      * No add/remove/update logic is duplicated here — it all runs through
-     * the reducer built in the previous phase.
+     * the reducer, whether the command was typed or spoken.
      */
     const execute = (command: ParsedCommand): CommandResult => {
       // An unrecognised or uncertain command must never change the list.
@@ -169,7 +186,11 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
         }
 
         case 'help':
-          return { command, status: 'info', message: HELP_MESSAGE }
+          return {
+            command,
+            status: 'info',
+            message: getLexicon(command.language).helpMessage,
+          }
 
         case 'search':
           return {
@@ -196,9 +217,16 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       updateQuantity,
       toggleChecked: (id) => dispatch({ type: 'TOGGLE_CHECKED', payload: { id } }),
       clearList,
-      runCommand: (input) => execute(parseCommand(input)),
+      runCommand: (input) => {
+        const result = execute(parseCommand(input, language))
+        setLastResult(result)
+        return result
+      },
+      lastResult,
+      language,
+      setLanguage,
     }
-  }, [state.items])
+  }, [state.items, language, lastResult, setLanguage])
 
   return <ShoppingContext.Provider value={value}>{children}</ShoppingContext.Provider>
 }

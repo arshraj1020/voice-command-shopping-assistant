@@ -68,11 +68,8 @@ export type Intent =
   | 'help'
   | 'unknown'
 
-/**
- * Command language. Only English is parsed today; the multilingual phase
- * adds further codes and the matching keyword tables.
- */
-export type LangCode = 'en'
+/** Command language. Vocabulary for each code lives in `data/lexicon.ts`. */
+export type LangCode = 'en' | 'hi'
 
 /** How sure the parser is. Low-confidence commands are never executed. */
 export type Confidence = 'high' | 'low'
@@ -109,3 +106,21 @@ export interface CommandResult {
   status: 'success' | 'info' | 'error'
   message: string
 }
+
+/* ------------------------------------------------------------------ */
+/* Voice input                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Microphone lifecycle.
+ *
+ * `unsupported` and `denied` are terminal until the user changes something
+ * outside the app; every other state resolves back to `idle`.
+ */
+export type MicStatus =
+  | 'idle'
+  | 'listening'
+  | 'processing'
+  | 'unsupported'
+  | 'denied'
+  | 'error'

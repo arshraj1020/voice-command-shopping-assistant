@@ -16,6 +16,7 @@ A voice-based shopping list manager that lets users add, remove, and modify item
 - [Planned Voice / NLP Flow](#planned-voice--nlp-flow)
 - [Multilingual Scope](#multilingual-scope)
 - [Natural-Language Commands](#natural-language-commands)
+- [Voice Input](#voice-input)
 - [Project Status](#project-status)
 - [Implementation Roadmap](#implementation-roadmap)
 - [Assignment Constraints](#assignment-constraints)
@@ -53,13 +54,13 @@ The goal is a small, reliable, well-documented application that demonstrates cle
 
 ## Planned Features
 
-The following features are required by the assignment brief and are planned for implementation. None are complete at this stage.
+The features required by the assignment brief. Ticked items are implemented; the rest are planned.
 
 ### Voice Input
 
-- [ ] **Voice command recognition** — add and manage list items by speaking
-- [ ] **Natural language command understanding** — recognize varied phrasings of the same intent (*"add bananas"*, *"I need bananas"*, *"I want to buy bananas"*)
-- [ ] **Multilingual voice commands** — command recognition in more than one language
+- [x] **Voice command recognition** — add and manage list items by speaking
+- [x] **Natural language command understanding** — recognize varied phrasings of the same intent (*"add bananas"*, *"I need bananas"*, *"I want to buy bananas"*)
+- [x] **Multilingual voice commands** — English and Hindi
 
 ### Smart Suggestions
 
@@ -69,9 +70,9 @@ The following features are required by the assignment brief and are planned for 
 
 ### Shopping List Management
 
-- [ ] **Add / remove / modify items** via voice commands
-- [ ] **Automatic categorization** — group items into categories such as produce, dairy, bakery, and snacks
-- [ ] **Quantity management** — interpret quantities and units (*"add 2 bottles of water"*, *"buy 5 oranges"*)
+- [x] **Add / remove / modify items** via voice commands
+- [x] **Automatic categorization** — group items into categories such as produce, dairy, bakery, and snacks
+- [x] **Quantity management** — interpret quantities and units (*"add 2 bottles of water"*, *"buy 5 oranges"*)
 
 ### Voice-Activated Search
 
@@ -82,15 +83,15 @@ The following features are required by the assignment brief and are planned for 
 
 ### UI / UX
 
-- [ ] **Minimalist UI** — a clean interface focused on the shopping list
-- [ ] **Real-time visual feedback** — show the recognized command and the resulting action as it happens
-- [ ] **Mobile / voice-first experience** — designed for small screens and spoken interaction
-- [ ] **Loading states** — clear indication while speech is being processed
-- [ ] **Error handling** — graceful handling of unsupported browsers, denied microphone permissions, and unrecognized commands
+- [ ] **Minimalist UI** — a clean interface focused on the shopping list *(functional; visual polish pending)*
+- [x] **Real-time visual feedback** — show the recognized command and the resulting action as it happens
+- [ ] **Mobile / voice-first experience** — designed for small screens and spoken interaction *(polish pending)*
+- [x] **Loading states** — clear indication while speech is being processed
+- [x] **Error handling** — graceful handling of unsupported browsers, denied microphone permissions, and unrecognized commands
 
 ## Planned Technology Stack
 
-These are the **planned** technologies for this project. None of the following have been set up or installed in this repository yet.
+The stack chosen for this project. Everything below is now in place, with the exception of hosting.
 
 | Layer | Planned choice | Rationale |
 |---|---|---|
@@ -161,16 +162,18 @@ The transcript is intended to remain visible throughout, so the user can always 
 
 ## Multilingual Scope
 
-Multilingual voice commands are **planned** and not yet implemented.
+Two languages are supported:
 
-Initial target languages:
+- **English** — speech recognition locale `en-US`
+- **Hindi** — speech recognition locale `hi-IN`
 
-- **English**
-- **Hindi**
+Selecting a language switches both the recognition locale and the vocabulary the parser uses. It takes effect on the next recognition session, and the choice is remembered across reloads.
 
-The planned approach is to switch the speech recognition language and map recognized command keywords and common product names to a single canonical internal representation, so that the shopping list, categories, and product data remain consistent regardless of the input language.
+Only the words differ between languages — the parsing pipeline is shared. Each language contributes its own intent markers, number words, unit words, fillers, and a product alias table. English is verb-first (*"add milk"*), Hindi is verb-final (*"दूध जोड़ो"*), so markers are matched as prefixes in one and suffixes in the other; everything after that is identical code.
 
-The assignment brief does not specify which languages must be supported. The scope above is chosen as the smallest implementation that demonstrates the requirement properly within the time budget. Additional languages may be added if time permits.
+Product aliases resolve spoken names onto **canonical English names** — `दूध` → `milk`, `सेब` → `apple`, `पानी` → `water` — so the shopping list, categories, and (later) history stay in one namespace regardless of the language a command was given in.
+
+The assignment brief does not specify which languages must be supported. Two is the smallest scope that demonstrates the requirement properly, and Hindi in particular proves the architecture handles a non-Latin script and a different word order. UI labels remain in English; the requirement is multilingual *commands*, not a localised interface.
 
 ## Natural-Language Commands
 
@@ -209,7 +212,31 @@ list update + visible feedback
 
 **Safety rule.** The parser prefers a false negative over a destructive false positive. Anything it cannot match confidently — nonsense, questions, multi-item commands, an item name with a stray number in it — returns `unknown` or `low` confidence, and the execution layer refuses to modify the list. Every command shows both what was heard and what was understood, so an unexpected result is always explainable rather than mysterious.
 
-The same `parseCommand()` → `runCommand()` path will serve speech transcripts, so voice and text will behave identically.
+## Voice Input
+
+Speech is handled by the browser's own **Web Speech API** — no external service, no API key, and therefore no secret anywhere in this repository. Voice is a transport layer on top of the parser above, nothing more:
+
+```
+Speech Recognition   (Web Speech API, push-to-talk, locale from the selector)
+        ↓
+Transcript           (interim text shown live, then the final utterance)
+        ↓
+Shared NLP Parser    (the same parseCommand() the text box uses)
+        ↓
+Command Execution    (runCommand() → existing shopping-list actions)
+        ↓
+Shopping List
+```
+
+A spoken command and the identical typed command run the same code from the transcript onward, so they cannot diverge.
+
+**Push-to-talk, not always-listening.** Mobile browsers end recognition on every pause, which makes a continuous session unreliable in exactly the setting this app is meant for.
+
+**Microphone states.** `idle` → `listening` → `processing` → `idle`, plus `unsupported`, `denied`, and `error`. The button and the status line always reflect the real state, so it is never unclear whether the app is listening.
+
+**Voice is never required.** The browser is feature-detected at startup. Where speech recognition is unavailable, the app says so plainly and the text command box — which is a permanent part of the interface, not a stopgap — does everything voice does.
+
+Speech recognition also needs a secure context: it works on `localhost` and over HTTPS, but not over plain `http://` on a LAN address.
 
 ## Project Status
 
@@ -217,10 +244,14 @@ The same `parseCommand()` → `runCommand()` path will serve speech transcripts,
 
 Working today:
 
-- Shopping list — add, merge, modify, check off, remove, and clear items; automatic categorisation; persistence in the browser.
-- Natural-language commands, typed — plain-English instructions such as *"add 2 bottles of water"* or *"take eggs off my list"* are parsed and executed. See [Natural-Language Commands](#natural-language-commands) below.
+- **Shopping list** — add, merge, modify, check off, remove, and clear items; automatic categorisation; persistence in the browser.
+- **Natural-language commands** — instructions such as *"add 2 bottles of water"* or *"take eggs off my list"* are parsed and executed. See [Natural-Language Commands](#natural-language-commands).
+- **Voice input** — spoken commands via the browser's Web Speech API, feeding the same parser. See [Voice Input](#voice-input).
+- **English and Hindi** — commands in either language, resolving to one canonical list. See [Multilingual Scope](#multilingual-scope).
 
-Not implemented yet: voice recognition, multilingual commands, voice search, and smart suggestions. The application is not deployed yet.
+Not implemented yet: voice-activated product search, smart suggestions, and final UI polish. The application is not deployed yet.
+
+Browser support has not been formally tested yet, so this README makes no compatibility claims. The app feature-detects speech recognition at startup and falls back to the text command box wherever it is unavailable. The [Browser Support](#browser-support) section will be filled in once real testing is done.
 
 ## Implementation Roadmap
 
@@ -229,8 +260,8 @@ Not implemented yet: voice recognition, multilingual commands, voice search, and
 | 1 | Project setup | Complete |
 | 2 | Core shopping list | Complete |
 | 3 | NLP / parser | Complete |
-| 4 | Voice recognition | Not started |
-| 5 | Multilingual support | Not started |
+| 4 | Voice recognition | Complete |
+| 5 | Multilingual support | Complete (English + Hindi) |
 | 6 | Voice search | Not started |
 | 7 | Smart suggestions | Not started |
 | 8 | UI / UX | Not started |

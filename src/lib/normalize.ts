@@ -3,6 +3,10 @@
  *
  * Pure string helpers shared by the command parser and the shopping list.
  * No React, no DOM, no side effects.
+ *
+ * Every character class here includes `\p{M}` (combining marks) alongside
+ * `\p{L}`. Devanagari vowel signs are marks, not letters, so omitting them
+ * would silently destroy Hindi words.
  */
 
 /** Contractions and common shorthand, expanded before punctuation is stripped. */
@@ -40,39 +44,6 @@ const CONTRACTIONS: Readonly<Record<string, string>> = {
 }
 
 /**
- * Number words understood as quantities.
- *
- * "zero" is deliberately absent: a quantity of zero is never a sensible
- * shopping instruction, and product names such as "coke zero" would
- * otherwise be misread as a quantity.
- */
-const NUMBER_WORDS: Readonly<Record<string, number>> = {
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-  thirteen: 13,
-  fourteen: 14,
-  fifteen: 15,
-  sixteen: 16,
-  seventeen: 17,
-  eighteen: 18,
-  nineteen: 19,
-  twenty: 20,
-  thirty: 30,
-  forty: 40,
-  fifty: 50,
-}
-
-/**
  * Nouns that are normally written in the plural. Singularising these produces
  * awkward names ("chip", "oat"), so they are left alone.
  */
@@ -81,20 +52,53 @@ const INVARIANT_PLURALS: ReadonlySet<string> = new Set([
   'tissues', 'greens', 'groceries', 'scissors', 'clothes', 'jeans', 'grapes',
 ])
 
+/** Escape a literal string for safe use inside a regular expression. */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Build a regex alternation from literal strings, longest first so the most
+ * specific match always wins.
+ */
+export function alternation(values: readonly string[]): string {
+  return [...values]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join('|')
+}
+
 export function expandContractions(text: string): string {
   return text.replace(/[a-z]+(?:'[a-z]+)*/g, (word) => CONTRACTIONS[word] ?? word)
 }
 
-export function wordsToNumbers(text: string): string {
-  return text.replace(/[a-z]+/g, (word) =>
-    word in NUMBER_WORDS ? String(NUMBER_WORDS[word]) : word,
+/**
+ * Replace spelled-out numbers with digits, using the supplied vocabulary.
+ *
+ * Applied to the command payload *after* the intent marker has been removed.
+ * Doing it earlier would corrupt markers that contain a number word — Hindi
+ * "कर दो" ("make it") ends in "दो", which also means "two".
+ */
+export function applyNumberWords(
+  text: string,
+  numberWords: Readonly<Record<string, number>>,
+): string {
+  return text.replace(/[\p{L}\p{M}]+/gu, (word) =>
+    word in numberWords ? String(numberWords[word]) : word,
+  )
+}
+
+/** Devanagari digits (०-९) mapped onto ASCII. */
+function normalizeDigits(text: string): string {
+  return text.replace(/[०-९]/g, (digit) =>
+    String(digit.charCodeAt(0) - 0x0966),
   )
 }
 
 /**
  * Full normalisation pipeline for a spoken or typed command.
  *
- * lowercase -> expand contractions -> strip punctuation -> number words
+ * lowercase -> expand contractions -> strip punctuation -> normalise digits
  * -> collapse whitespace.
  *
  * `$` and decimal points are preserved because the voice-search phase needs
@@ -104,12 +108,12 @@ export function normalizeText(raw: string): string {
   const lowered = raw.toLowerCase().replace(/[‘’ʼ]/g, "'")
 
   const stripped = expandContractions(lowered)
-    .replace(/[^\p{L}\p{N}\s$.'-]/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}\s$.'-]/gu, ' ')
     .replace(/'/g, '')
     // Keep decimal points, drop sentence punctuation.
     .replace(/\.(?!\d)/g, ' ')
 
-  return wordsToNumbers(stripped).replace(/\s+/g, ' ').trim()
+  return normalizeDigits(stripped).replace(/\s+/g, ' ').trim()
 }
 
 /**
@@ -119,7 +123,7 @@ export function normalizeText(raw: string): string {
 export function normalizeItemName(raw: string): string {
   return raw
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N}\s-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -136,6 +140,9 @@ export function toDisplayName(raw: string): string {
 /**
  * Naive English singulariser. Deliberately simple and deterministic —
  * good enough for grocery nouns, and no attempt at full grammar.
+ *
+ * Non-Latin scripts pass through untouched, which is what we want: Hindi
+ * item names are resolved through the lexicon's alias table instead.
  */
 export function singularizeWord(word: string): string {
   if (word.length <= 3 || word.endsWith('ss')) return word

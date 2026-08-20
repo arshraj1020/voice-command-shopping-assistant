@@ -1,41 +1,32 @@
+import { alternation } from './normalize'
 import type { Unit } from '../types'
 
 /**
  * Quantity and unit extraction.
  *
- * Pure: takes the text left over after the intent phrase has been removed,
+ * Pure: takes the text left over after the intent marker has been removed,
  * and returns the quantity, the unit, and the remaining text.
+ *
+ * Patterns are compiled once per language rather than per command, and use
+ * script-agnostic boundaries so Hindi unit words match as reliably as English
+ * ones.
  */
 
-/** Spoken and written variants mapped onto the canonical `Unit` values. */
-export const UNIT_ALIASES: Readonly<Record<string, Unit>> = {
-  piece: 'piece', pieces: 'piece', pc: 'piece', pcs: 'piece',
-  bottle: 'bottle', bottles: 'bottle',
-  can: 'can', cans: 'can', tin: 'can', tins: 'can',
-  pack: 'pack', packs: 'pack', packet: 'pack', packets: 'pack',
-  box: 'box', boxes: 'box',
-  dozen: 'dozen', dozens: 'dozen',
-  g: 'g', gram: 'g', grams: 'g', gm: 'g', gms: 'g',
-  kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
-  ml: 'ml', millilitre: 'ml', millilitres: 'ml', milliliter: 'ml', milliliters: 'ml',
-  l: 'l', litre: 'l', litres: 'l', liter: 'l', liters: 'l', ltr: 'l',
+export interface QuantityVocabulary {
+  unitAliases: Readonly<Record<string, Unit>>
+  articles: readonly string[]
+  connectors: readonly string[]
 }
 
-/** Longest alias first, so "ml" is never matched as "l". */
-const UNIT_PATTERN = Object.keys(UNIT_ALIASES)
-  .sort((a, b) => b.length - a.length)
-  .join('|')
-
-/** "2 bottles of water", "500 ml milk", "1 kg rice" */
-const NUMBER_WITH_UNIT = new RegExp(
-  `\\b(\\d+(?:\\.\\d+)?)\\s*(${UNIT_PATTERN})\\b(?:\\s+of\\b)?`,
-)
-
-/** "a dozen eggs", "a pack of biscuits" */
-const ARTICLE_WITH_UNIT = new RegExp(`\\ba\\s+(${UNIT_PATTERN})\\b(?:\\s+of\\b)?`)
-
-/** "5 oranges", "3 apples" — a bare count with no unit. */
-const BARE_NUMBER = /\b(\d+(?:\.\d+)?)\b/
+export interface QuantityPatterns {
+  /** "2 bottles of water", "500 ml milk", "दो लीटर दूध" */
+  numberWithUnit: RegExp
+  /** "a dozen eggs" — absent for languages with no article form. */
+  articleWithUnit: RegExp | null
+  /** "5 oranges" — a bare count with no unit. */
+  bareNumber: RegExp
+  aliases: Readonly<Record<string, Unit>>
+}
 
 export interface QuantityMatch {
   /** `null` when the command did not state a quantity. */
@@ -46,6 +37,37 @@ export interface QuantityMatch {
   rest: string
 }
 
+const NOT_WORD_AHEAD = '(?![\\p{L}\\p{M}\\p{N}])'
+
+export function compileQuantityPatterns(
+  vocabulary: QuantityVocabulary,
+): QuantityPatterns {
+  const units = alternation(Object.keys(vocabulary.unitAliases))
+  const connector = vocabulary.connectors.length
+    ? `(?:\\s+(?:${alternation(vocabulary.connectors)})${NOT_WORD_AHEAD})?`
+    : ''
+
+  return {
+    numberWithUnit: new RegExp(
+      `(^|\\s)(\\d+(?:\\.\\d+)?)\\s*(${units})${NOT_WORD_AHEAD}${connector}`,
+      'u',
+    ),
+    articleWithUnit: vocabulary.articles.length
+      ? new RegExp(
+          `(^|\\s)(?:${alternation(vocabulary.articles)})\\s+(${units})${NOT_WORD_AHEAD}${connector}`,
+          'u',
+        )
+      : null,
+    bareNumber: new RegExp(`(^|\\s)(\\d+(?:\\.\\d+)?)${NOT_WORD_AHEAD}`, 'u'),
+    aliases: vocabulary.unitAliases,
+  }
+}
+
+/** Remove exactly the matched span, leaving a separating space behind. */
+function withoutMatch(text: string, match: RegExpExecArray): string {
+  return `${text.slice(0, match.index)} ${text.slice(match.index + match[0].length)}`
+}
+
 /**
  * Extract a quantity and unit from a command fragment.
  *
@@ -53,33 +75,64 @@ export interface QuantityMatch {
  * followed by a unit, then a bare number. Each match removes only its own
  * tokens, leaving the rest of the text for item extraction.
  */
-export function extractQuantity(text: string): QuantityMatch {
-  const numberWithUnit = NUMBER_WITH_UNIT.exec(text)
+export function extractQuantity(
+  text: string,
+  patterns: QuantityPatterns,
+): QuantityMatch {
+  const numberWithUnit = patterns.numberWithUnit.exec(text)
   if (numberWithUnit) {
     return {
-      quantity: Number(numberWithUnit[1]),
-      unit: UNIT_ALIASES[numberWithUnit[2]],
-      rest: text.replace(numberWithUnit[0], ' '),
+      quantity: Number(numberWithUnit[2]),
+      unit: patterns.aliases[numberWithUnit[3]],
+      rest: withoutMatch(text, numberWithUnit),
     }
   }
 
-  const articleWithUnit = ARTICLE_WITH_UNIT.exec(text)
-  if (articleWithUnit) {
-    return {
-      quantity: 1,
-      unit: UNIT_ALIASES[articleWithUnit[1]],
-      rest: text.replace(articleWithUnit[0], ' '),
+  if (patterns.articleWithUnit) {
+    const articleWithUnit = patterns.articleWithUnit.exec(text)
+    if (articleWithUnit) {
+      return {
+        quantity: 1,
+        unit: patterns.aliases[articleWithUnit[2]],
+        rest: withoutMatch(text, articleWithUnit),
+      }
     }
   }
 
-  const bareNumber = BARE_NUMBER.exec(text)
+  const bareNumber = patterns.bareNumber.exec(text)
   if (bareNumber) {
     return {
-      quantity: Number(bareNumber[1]),
+      quantity: Number(bareNumber[2]),
       unit: null,
-      rest: text.replace(bareNumber[0], ' '),
+      rest: withoutMatch(text, bareNumber),
     }
   }
 
   return { quantity: null, unit: null, rest: text }
+}
+
+/**
+ * Take the *last* number in a fragment — the target quantity of an update.
+ *
+ * "change 2 apples to 5" means five, not two, so the trailing number wins.
+ */
+export function extractTargetQuantity(text: string): {
+  quantity: number | null
+  rest: string
+} {
+  const pattern = /\d+(?:\.\d+)?/g
+  let last: RegExpExecArray | null = null
+  let current: RegExpExecArray | null = pattern.exec(text)
+
+  while (current !== null) {
+    last = current
+    current = pattern.exec(text)
+  }
+
+  if (!last) return { quantity: null, rest: text }
+
+  return {
+    quantity: Number(last[0]),
+    rest: `${text.slice(0, last.index)} ${text.slice(last.index + last[0].length)}`,
+  }
 }

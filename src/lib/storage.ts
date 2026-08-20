@@ -1,11 +1,13 @@
 import { CATEGORY_ORDER } from '../data/categories'
+import { isLangCode } from '../data/lexicon'
 import { categorizeItem } from './categorize'
 import { createId } from './id'
 import { normalizeItemName, toDisplayName } from './normalize'
-import type { Category, ListItem, Unit } from '../types'
+import type { Category, LangCode, ListItem, Unit } from '../types'
 
 /** Versioned so a future schema change cannot be fed stale data. */
 export const STORAGE_KEY = 'vcsa.list.v1'
+export const LANGUAGE_KEY = 'vcsa.language.v1'
 
 const VALID_UNITS = [
   'piece', 'bottle', 'can', 'pack', 'box', 'dozen', 'g', 'kg', 'ml', 'l',
@@ -96,5 +98,23 @@ export function saveItems(items: readonly ListItem[]): void {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
   } catch {
     // Quota exceeded or storage disabled — nothing useful to do here.
+  }
+}
+
+/** Read the saved command language, falling back to English. */
+export function loadLanguage(): LangCode {
+  try {
+    const stored = window.localStorage.getItem(LANGUAGE_KEY)
+    return isLangCode(stored) ? stored : 'en'
+  } catch {
+    return 'en'
+  }
+}
+
+export function saveLanguage(language: LangCode): void {
+  try {
+    window.localStorage.setItem(LANGUAGE_KEY, language)
+  } catch {
+    // Storage unavailable — the choice simply will not survive a reload.
   }
 }
