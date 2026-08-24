@@ -5,6 +5,9 @@ A voice-first shopping list manager. Speak naturally — *"add milk"*, *"two app
 interprets the intent, extracts the item, quantity and unit, categorises the product,
 and updates the list. It also suggests what you are likely to need next.
 
+**▶ Live application: <https://voice-command-shopping-assistant-tau.vercel.app/>**
+(open in Chrome or Edge for voice input — see [Browser Support](#browser-support))
+
 Built as a technical assessment under an 8-hour budget, with a deliberately small
 footprint: **two runtime dependencies** (`react`, `react-dom`), no backend, no
 database, no API keys, and no paid services.
@@ -39,12 +42,34 @@ database, no API keys, and no paid services.
 
 ## Live Demo
 
-> **Not yet deployed.** The repository is deployment-ready — see
-> [Deployment](#deployment) for the one-command procedure. This section will
-> carry the live URL once deployed; no URL is claimed until it exists.
+**<https://voice-command-shopping-assistant-tau.vercel.app/>**
 
-Until then the application runs locally with `npm install && npm run dev`, which
-serves it on `http://localhost:5173` — a secure context, so the microphone works.
+Deployed on Vercel as a static build, served over HTTPS — which the Web Speech
+API requires. No sign-in, no setup, nothing to install.
+
+**Open it in Chrome or Edge** (desktop or Android) for voice input. Firefox and
+iOS Chrome have no Web Speech API; the app detects that, hides the microphone and
+explains the text fallback, and every feature still works by typing. Full details
+in [Browser Support](#browser-support).
+
+### Two minutes to see everything
+
+Tap the microphone and speak, or type into the same box — both run identical code.
+
+| Say or type | What to look for |
+|---|---|
+| `add milk` | Added to **Dairy**; the chip row shows `ADD · milk` |
+| `please add bread` · `um add eggs` | Politeness and hesitation are tolerated |
+| `two apples` · `2 kg rice` · `a dozen eggs` | Quantity and unit without a command verb |
+| `alternative to milk` | Alternatives panel — tap **Replace** to swap it in |
+| `find organic apples` | Filter chips show exactly what was heard |
+| `find toothpaste under ₹500` | Price filtering (the catalog is priced in ₹) |
+| `remove milk` · `change apples to 5` | Removing and updating |
+| `asdkjhasd` | Refused — the list is never modified on a bad parse |
+| switch to **हिन्दी**, then `दूध जोड़ो` | Hindi commands land in the same list |
+
+The list, the purchase history and the language choice all persist in the
+browser, so a reload keeps your state.
 
 ---
 
@@ -588,6 +613,9 @@ living in the tested pure layer.
 
 ## Deployment
 
+**Deployed on Vercel:**
+<https://voice-command-shopping-assistant-tau.vercel.app/>
+
 The application is a static Vite SPA with no server-side component, so deployment
 is one command. `vercel.json` and `.nvmrc` are committed; nothing else is needed.
 
@@ -598,14 +626,11 @@ vercel --prod
 
 Vercel auto-detects Vite, runs `npm run build`, publishes `dist/`, and provisions
 HTTPS automatically — which matters here, because the Web Speech API only runs in
-a secure context.
+a secure context. Pushing to `main` redeploys.
 
 Any static host works equally well (Netlify, Firebase Hosting, GitHub Pages,
 Cloudflare Pages): build with `npm run build` and serve `dist/`. The committed
 rewrite rule sends unknown paths to `index.html`.
-
-After deploying, put the URL in the [Live Demo](#live-demo) section above and in
-the repository's **About → Website** field.
 
 ---
 
