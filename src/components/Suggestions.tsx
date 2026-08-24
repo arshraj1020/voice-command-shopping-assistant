@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { CATALOG } from '../data/catalog'
+import { toDisplayName } from '../lib/normalize'
 import { generateSuggestions } from '../lib/suggestions'
 import { useShopping } from '../state/ShoppingContext'
-import { SwapIcon } from './Icon'
+import { CloseIcon, SwapIcon } from './Icon'
 import type { Suggestion, SuggestionType } from '../types'
 
 /** Short label so the source of each recommendation is unmistakable. */
@@ -90,14 +91,22 @@ function UrgentCard({ suggestion }: { suggestion: Suggestion }) {
 }
 
 export default function Suggestions() {
-  const { items, history, resetHistory } = useShopping()
+  const { items, history, resetHistory, substituteFor, clearSubstitute } =
+    useShopping()
 
   // Read the clock once, so the suggestion list stays stable while mounted.
   const [month] = useState(() => new Date().getMonth())
 
   const suggestions = useMemo(
-    () => generateSuggestions({ items, history, catalog: CATALOG, month }),
-    [items, history, month],
+    () =>
+      generateSuggestions({
+        items,
+        history,
+        catalog: CATALOG,
+        month,
+        requestedFor: substituteFor,
+      }),
+    [items, history, month, substituteFor],
   )
 
   const urgent = suggestions.filter((suggestion) => suggestion.urgent)
@@ -120,6 +129,21 @@ export default function Suggestions() {
           </button>
         )}
       </div>
+
+      {/* Answer to a spoken "alternative to milk" — dismissible, never sticky. */}
+      {substituteFor && (
+        <p className="sug__requested" role="status">
+          <span>Alternatives to {toDisplayName(substituteFor)}</span>
+          <button
+            type="button"
+            className="btn btn--icon"
+            onClick={clearSubstitute}
+            aria-label="Stop showing alternatives"
+          >
+            <CloseIcon size={16} />
+          </button>
+        </p>
+      )}
 
       {urgent.map((suggestion) => (
         <UrgentCard key={suggestion.id} suggestion={suggestion} />

@@ -433,11 +433,6 @@ export const CATALOG_BRANDS: readonly string[] = [
   ...new Set(CATALOG.map((product) => product.brand)),
 ]
 
-/** Distinct tags actually present in the catalog. */
-export const CATALOG_TAGS = [
-  ...new Set(CATALOG.flatMap((product) => product.tags)),
-]
-
 /** Price actually charged today. */
 export function effectivePrice(product: Product): number {
   return product.onSale && product.salePrice !== null ? product.salePrice : product.price

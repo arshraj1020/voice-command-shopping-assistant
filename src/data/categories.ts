@@ -50,6 +50,15 @@ export const CATEGORY_KEYWORDS: Record<Category, readonly string[]> = {
     'milk', 'cheese', 'butter', 'yogurt', 'yoghurt', 'cream', 'curd',
     'paneer', 'ghee', 'egg', 'eggs', 'buttermilk', 'sour cream',
     'cream cheese', 'cottage cheese',
+    /*
+     * Plant milks belong in the dairy aisle, and each must be listed as a full
+     * phrase: matching is longest-keyword-first, so without these "almond milk"
+     * would be captured by the Snacks keyword "almonds" (singularised to
+     * "almond", 6 characters) instead of "milk" (4). The longer, more specific
+     * phrase wins.
+     */
+    'almond milk', 'soy milk', 'coconut milk', 'oat milk', 'cashew milk',
+    'rice milk', 'vegan butter',
   ],
   bakery: [
     'bread', 'bun', 'bagel', 'croissant', 'cake', 'muffin', 'tortilla',

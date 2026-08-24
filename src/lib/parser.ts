@@ -1,4 +1,5 @@
 import { getLexicon, type LanguageRules } from '../data/lexicon'
+import { isKnownItemName } from './categorize'
 import {
   applyNumberWords,
   canonicalizeItemName,
@@ -28,10 +29,15 @@ import type {
  * Pure: no React, no DOM, no network, no side effects. One shared pipeline
  * serves every language; the vocabulary comes from `data/lexicon.ts`.
  *
- * Intents are tested most-specific-first — help, clear, update, remove,
- * search, add — so that "remove everything" clears the list rather than
- * hunting for an item called "everything", and Hindi "दूध नहीं चाहिए"
- * removes rather than adds.
+ * Intents are tested most-specific-first — help, clear, update, substitute,
+ * remove, search, add — so that "remove everything" clears the list rather
+ * than hunting for an item called "everything", "find an alternative to milk"
+ * asks for a substitute rather than searching the catalog, and Hindi
+ * "दूध नहीं चाहिए" removes rather than adds.
+ *
+ * A final fallback accepts an utterance with no command verb at all
+ * ("two apples") when what is left resolves to a product the categoriser
+ * recognises exactly.
  */
 
 /** Beyond this, the "item" is almost certainly a misparse, not a product. */
@@ -105,6 +111,39 @@ function matchFirst(
     if (match) return match
   }
   return null
+}
+
+/** How many stacked politeness words to peel off: "ok so please add milk". */
+const MAX_LEAD_NOISE_PASSES = 3
+
+/**
+ * Remove politeness and hesitation words from the front of an utterance.
+ *
+ * Every intent pattern is anchored to the start of the string, so a single
+ * unexpected word in front of the verb would otherwise make the whole command
+ * unreadable — and "um", "okay", "so" and "please" are exactly what speech
+ * transcripts open with.
+ *
+ * Never empties the string: "please" on its own stays "please", and falls
+ * through to `unknown` as it should.
+ */
+export function stripLeadNoise(text: string, rules: LanguageRules): string {
+  const ordered = [...rules.leadNoise].sort((a, b) => b.length - a.length)
+  let result = text
+
+  for (let pass = 0; pass < MAX_LEAD_NOISE_PASSES; pass += 1) {
+    const match = ordered.find(
+      (noise) => result === noise || result.startsWith(`${noise} `),
+    )
+    if (!match) break
+
+    const remainder = result.slice(match.length).trim()
+    if (!remainder) break
+
+    result = remainder
+  }
+
+  return result
 }
 
 /** Strip filler phrases and leading/trailing filler words. */
@@ -187,7 +226,7 @@ export function parseCommand(
   source: CommandSource = 'text',
 ): ParsedCommand {
   const rules = getLexicon(language)
-  const text = normalizeText(raw)
+  const text = stripLeadNoise(normalizeText(raw), rules)
   if (!text) return unknownCommand(raw, rules.code)
 
   const base = { filters: null, language: rules.code, raw } as const
@@ -225,6 +264,28 @@ export function parseCommand(
     }
   }
 
+  /*
+   * Tested before search and add: "find an alternative to milk" and "get me a
+   * substitute for milk" open with a search verb and an add verb respectively.
+   * Falls through when no item survives, so a bare "alternative" is not a
+   * command.
+   */
+  const substitute = matchFirst(rules.patterns.substitute, text)
+  if (substitute) {
+    const item = finalizeItem(substitute[1] ?? '', rules)
+
+    if (item && !rules.pronouns.includes(item)) {
+      return {
+        ...base,
+        intent: 'substitute',
+        item,
+        quantity: null,
+        unit: null,
+        confidence: assessConfidence(item, rules, source),
+      }
+    }
+  }
+
   const remove = matchFirst(rules.patterns.remove, text)
   if (remove) return buildItemCommand('remove', remove[1] ?? '', raw, rules, source)
 
@@ -248,6 +309,27 @@ export function parseCommand(
 
   const add = matchFirst(rules.patterns.add, text)
   if (add) return buildItemCommand('add', add[1] ?? '', raw, rules, source)
+
+  /*
+   * No command verb at all — "two apples", "2 kg rice", "a dozen eggs".
+   * People phrase list items this way, and speech recognition drops leading
+   * verbs often enough that refusing outright is the worse failure.
+   *
+   * The gate is deliberately narrow. What is left must resolve to a name the
+   * categoriser recognises *exactly*; merely containing a keyword is not
+   * enough, so "what about milk" and "do you have milk" stay `unknown` while
+   * "milk" does not. Nonsense ("asdkjhasd") and questions ("what is the
+   * weather") resolve to nothing and are refused.
+   */
+  const bare = buildItemCommand('add', text, raw, rules, source)
+  if (
+    bare.intent === 'add' &&
+    bare.confidence === 'high' &&
+    bare.item &&
+    isKnownItemName(bare.item)
+  ) {
+    return bare
+  }
 
   return unknownCommand(raw, rules.code)
 }

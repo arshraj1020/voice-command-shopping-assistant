@@ -25,15 +25,6 @@ import type {
 
 const NOT_WORD_AHEAD = '(?![\\p{L}\\p{M}\\p{N}])'
 
-export const EMPTY_FILTERS: SearchFilters = {
-  query: null,
-  brand: null,
-  minPrice: null,
-  maxPrice: null,
-  size: null,
-  attributes: [],
-}
-
 /* ------------------------------------------------------------------ */
 /* Vocabulary                                                          */
 /* ------------------------------------------------------------------ */

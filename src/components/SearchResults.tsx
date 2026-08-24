@@ -86,6 +86,8 @@ export default function SearchResults() {
   if (!search) return null
 
   const chips = describeFilters(search.filters)
+  const priceFiltered =
+    search.filters.minPrice !== null || search.filters.maxPrice !== null
 
   return (
     <section className="section" aria-label="Search results">
@@ -97,6 +99,12 @@ export default function SearchResults() {
             <span className="sr-only"> products</span>
           </span>
           <span className="section__spacer" />
+          {/*
+            Price filters are matched against a demo catalog priced in rupees.
+            Saying so here stops a "$5" search that returns nothing from looking
+            like a broken search rather than a currency mismatch.
+          */}
+          <span className="search__currency">Prices in ₹ · demo catalog</span>
           <button
             type="button"
             className="btn btn--icon"
@@ -132,6 +140,13 @@ export default function SearchResults() {
             <p className="empty__text">
               Try removing a filter above, or widening the price range.
             </p>
+            {priceFiltered && (
+              <p className="empty__text">
+                This demo catalog is priced in Indian Rupees, so a price given
+                in another currency is read as its rupee value — try{' '}
+                <b>under ₹500</b>.
+              </p>
+            )}
           </div>
         ) : (
           <ul className="search__results">

@@ -12,6 +12,7 @@ import {
 import { CATALOG } from '../data/catalog'
 import { createDemoHistory } from '../data/demoHistory'
 import { getLexicon } from '../data/lexicon'
+import { substitutesFor } from '../data/substitutes'
 import { createId } from '../lib/id'
 import { parseCommand } from '../lib/parser'
 import { containsNonLatinLetters } from '../lib/normalize'
@@ -47,6 +48,12 @@ const SUCCESS_DISMISS_MS = 4000
 /** Units that are counted and therefore pluralise: "2 bottles of water". */
 const COUNTABLE_UNITS: readonly Unit[] = ['bottle', 'can', 'pack', 'box', 'piece']
 
+/** "a", "a and b", "a, b or c" — for listing alternatives in a message. Pure. */
+function formatList(values: readonly string[]): string {
+  if (values.length <= 1) return values[0] ?? ''
+  return `${values.slice(0, -1).join(', ')} or ${values[values.length - 1]}`
+}
+
 /** Human-readable description of an item and its quantity. Pure. */
 function describe(item: string, quantity: number | null, unit: Unit | null): string {
   const amount = quantity ?? 1
@@ -77,6 +84,12 @@ interface ShoppingContextValue {
   search: SearchState | null
   clearSearch: () => void
   removeSearchFilter: (field: FilterField, tag?: ProductTag) => void
+  /**
+   * Item the user asked for alternatives to, via a `substitute` command.
+   * Read by the Suggestions panel; asking never modifies the list.
+   */
+  substituteFor: string | null
+  clearSubstitute: () => void
   /** What the user buys routinely. Feeds the suggestion engine. */
   history: History
   /** Clear the seeded demo history (and anything learned since). */
@@ -105,6 +118,7 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<LangCode>(loadLanguage)
   const [lastResult, setLastResult] = useState<CommandResult | null>(null)
   const [search, setSearch] = useState<SearchState | null>(null)
+  const [substituteFor, setSubstituteFor] = useState<string | null>(null)
 
   // "Added milk" stops being useful within seconds, so a successful result
   // clears itself. Failures stay until the next command.
@@ -145,7 +159,10 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
     setLanguageState(next)
     // The previous result was interpreted with the old vocabulary.
     setLastResult(null)
+    setSubstituteFor(null)
   }, [])
+
+  const clearSubstitute = useCallback(() => setSubstituteFor(null), [])
 
   const clearSearch = useCallback(() => setSearch(null), [])
 
@@ -298,6 +315,34 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        case 'substitute': {
+          if (!command.item) {
+            return { command, status: 'error', message: "I couldn't understand that." }
+          }
+
+          const alternatives = substitutesFor(command.item)
+          if (alternatives.length === 0) {
+            return {
+              command,
+              status: 'info',
+              message: `I don't have an alternative for ${command.item} yet.`,
+            }
+          }
+
+          /*
+           * Rendering is the Suggestions panel's job — it already knows how to
+           * draw a substitute card and how to swap one in. Asking for an
+           * alternative never modifies the list.
+           */
+          setSubstituteFor(command.item)
+
+          return {
+            command,
+            status: 'success',
+            message: `Try ${formatList(alternatives.map((option) => option.name))} instead of ${command.item}.`,
+          }
+        }
+
         case 'help':
           return {
             command,
@@ -348,7 +393,12 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       toggleChecked: (id) => dispatch({ type: 'TOGGLE_CHECKED', payload: { id } }),
       clearList,
       runCommand: (input, source = 'text') => {
-        const result = execute(parseCommand(input, language, source))
+        const command = parseCommand(input, language, source)
+
+        // Any other command supersedes the alternatives currently on screen.
+        if (command.intent !== 'substitute') setSubstituteFor(null)
+
+        const result = execute(command)
         publishResult(result)
         return result
       },
@@ -358,6 +408,8 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
       search,
       clearSearch,
       removeSearchFilter,
+      substituteFor,
+      clearSubstitute,
       history: state.history,
       resetHistory: () => dispatch({ type: 'RESET_HISTORY' }),
       /*
@@ -385,8 +437,10 @@ export function ShoppingProvider({ children }: { children: ReactNode }) {
     language,
     lastResult,
     search,
+    substituteFor,
     setLanguage,
     clearSearch,
+    clearSubstitute,
     removeSearchFilter,
     publishResult,
   ])

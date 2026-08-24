@@ -12,12 +12,17 @@ import type { History, ListItem, Product, Suggestion } from '../types'
  * deduplicated, and capped. Pure throughout: no React, no side effects, no
  * clock reads (the month is supplied by the caller), so the same inputs always
  * produce the same list.
+ *
+ * A spoken "alternative to milk" is served by the same substitute generator,
+ * via `requestedFor` — there is one substitute implementation, not two.
  */
 
 /** Never show more than this many cards at once. */
 const MAX_SUGGESTIONS = 6
 
 const MAX_SUBSTITUTES = 2
+/** Alternatives shown when the user explicitly asked for them. */
+const MAX_REQUESTED = 3
 const MAX_HISTORY = 3
 const MAX_SALE = 2
 const MAX_SEASONAL = 2
@@ -31,6 +36,12 @@ export interface SuggestionInput {
   catalog: readonly Product[]
   /** Month index, 0–11. Passed in so the engine stays deterministic. */
   month: number
+  /**
+   * Canonical name the user explicitly asked for alternatives to, via a
+   * `substitute` command. Its alternatives outrank every other source, and —
+   * unlike the automatic generator — the item need not be on the list.
+   */
+  requestedFor?: string | null
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,6 +106,44 @@ function substituteSuggestions(
 
   // Out-of-stock replacements always outrank preference alternatives.
   return [...urgent, ...preference].slice(0, MAX_SUBSTITUTES)
+}
+
+/**
+ * Alternatives the user asked for out loud ("alternative to milk").
+ *
+ * Reuses the same substitute table and the same card shape as the automatic
+ * generator. When the item happens to be on the list, `replacesItemId` is set
+ * so the card offers **Replace** and carries the quantity across; otherwise it
+ * is a plain **Add**.
+ */
+function requestedSubstituteSuggestions(
+  requestedFor: string | null | undefined,
+  items: readonly ListItem[],
+  catalog: readonly Product[],
+  onList: ReadonlySet<string>,
+): Suggestion[] {
+  if (!requestedFor) return []
+
+  const alternatives = substitutesFor(requestedFor)
+  if (alternatives.length === 0) return []
+
+  const listed = items.find((item) => item.name === requestedFor)
+  const displayName = listed ? listed.displayName : toDisplayName(requestedFor)
+  const unavailable = unavailableProduct(requestedFor, catalog)
+
+  return alternatives
+    .filter((alternative) => !onList.has(alternative.name))
+    .slice(0, MAX_REQUESTED)
+    .map((alternative) => ({
+      id: `requested:${requestedFor}:${alternative.name}`,
+      type: 'substitute' as const,
+      name: alternative.name,
+      displayName: toDisplayName(alternative.name),
+      reason: unavailable
+        ? `${displayName} is out of stock — ${alternative.reason.toLowerCase()}`
+        : `Instead of ${displayName.toLowerCase()} — ${alternative.reason.toLowerCase()}`,
+      replacesItemId: listed?.id,
+    }))
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,19 +234,22 @@ function seasonalSuggestions(
 /**
  * Build the suggestion list.
  *
- * Sources are concatenated in priority order — substitute, history, sale,
- * seasonal — then deduplicated by canonical name so a product that qualifies
- * under several sources appears once, under its most useful reason.
+ * Sources are concatenated in priority order — requested substitute, automatic
+ * substitute, history, sale, seasonal — then deduplicated by canonical name so
+ * a product that qualifies under several sources appears once, under its most
+ * useful reason.
  */
 export function generateSuggestions({
   items,
   history,
   catalog,
   month,
+  requestedFor,
 }: SuggestionInput): Suggestion[] {
   const onList = new Set(items.map((item) => item.name))
 
   const candidates = [
+    ...requestedSubstituteSuggestions(requestedFor, items, catalog, onList),
     ...substituteSuggestions(items, catalog, onList),
     ...historySuggestions(history, onList),
     ...saleSuggestions(catalog, onList),

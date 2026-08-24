@@ -1,7 +1,8 @@
 /**
  * Shared application types.
  *
- * Extended in later phases with the product catalog and suggestion models.
+ * Grouped by concern: shopping list, product catalog, command parsing, smart
+ * suggestions, and voice input.
  */
 
 /** Aisle-style grouping used to organise the shopping list. */
@@ -123,6 +124,8 @@ export type Intent =
   | 'update'
   | 'clear'
   | 'search'
+  /** "alternative to milk" — asks for substitutes without touching the list. */
+  | 'substitute'
   | 'help'
   | 'unknown'
 

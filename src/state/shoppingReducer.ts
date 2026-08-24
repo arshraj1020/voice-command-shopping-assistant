@@ -1,5 +1,5 @@
 import { categorizeItem } from '../lib/categorize'
-import { normalizeItemName, toDisplayName } from '../lib/normalize'
+import { canonicalizeItemName, toDisplayName } from '../lib/normalize'
 import type { Category, History, ListItem, ShoppingState, Unit } from '../types'
 
 export type ShoppingAction =
@@ -22,8 +22,6 @@ export type ShoppingAction =
   | { type: 'TOGGLE_CHECKED'; payload: { id: string } }
   | { type: 'CLEAR_LIST' }
   | { type: 'RESET_HISTORY' }
-
-export const initialShoppingState: ShoppingState = { items: [], history: {} }
 
 /**
  * Record one more purchase of an item.
@@ -55,7 +53,7 @@ export function findItemByName(
   items: readonly ListItem[],
   name: string,
 ): ListItem | undefined {
-  const canonical = normalizeItemName(name)
+  const canonical = canonicalizeItemName(name)
   return items.find((item) => item.name === canonical)
 }
 
@@ -70,7 +68,14 @@ export function shoppingReducer(
   switch (action.type) {
     case 'ADD_ITEM': {
       const { name, quantity, unit, id, addedAt } = action.payload
-      const canonical = normalizeItemName(name)
+      /*
+       * `canonicalize`, not merely `normalize`: `ListItem.name` is the key the
+       * list, history, catalog and substitute table all share, and it is
+       * defined as lowercase *and singular*. The parser already produces that
+       * form, so this only matters for a caller that does not — and it is what
+       * makes `findItemByName` agree with what was stored.
+       */
+      const canonical = canonicalizeItemName(name)
       if (!canonical) return state
 
       const amount = Math.max(1, Math.floor(quantity ?? 1))

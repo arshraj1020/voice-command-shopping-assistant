@@ -27,9 +27,17 @@ export interface LanguageRules {
     clear: readonly RegExp[]
     update: readonly RegExp[]
     remove: readonly RegExp[]
+    substitute: readonly RegExp[]
     search: readonly RegExp[]
     add: readonly RegExp[]
   }
+  /**
+   * Politeness and hesitation words that may precede a command. Stripped
+   * before intent detection, because every intent pattern is anchored to the
+   * start of the utterance and speech transcripts routinely open with one of
+   * these ("um add milk", "can you add milk").
+   */
+  leadNoise: readonly string[]
   numberWords: Readonly<Record<string, number>>
   unitAliases: Readonly<Record<string, Unit>>
   /** Words that stand in for "one" before a unit, as in "a dozen eggs". */
@@ -147,10 +155,28 @@ const ENGLISH: LanguageRules = {
       /^i do not (?:need|want)\b(.*)$/,
       /^(?:remove|delete|drop)\b(.*)$/,
     ],
+    /*
+     * Tested before `search` and `add`, because "find an alternative to milk"
+     * and "get me a substitute for milk" would otherwise be read as a product
+     * search or an add.
+     */
+    substitute: [
+      /^(?:find|get|give|show|suggest|need|want)(?:\s+me)?\s+(?:(?:an?|some|any|another|other)\s+)?(?:alternative|substitute|replacement|option)s?\s+(?:to|for)\b(.*)$/,
+      /^(?:(?:an?|some|any|another|other)\s+)?(?:alternative|substitute|replacement)s?\s+(?:to|for)\b(.*)$/,
+      /^what (?:can|could|should) i (?:use|buy|get|have)(?: as an alternative)?(?: instead of| in place of)\b(.*)$/,
+      /^what else (?:can|could) i (?:use|buy|get)(?: instead of| in place of)\b(.*)$/,
+      /^(?:something|anything|what) else instead of\b(.*)$/,
+      /^instead of\b(.*)$/,
+    ],
     search: [/^(?:search for|look for|show me|find|search)\b(.*)$/],
     add: [
       /^i want to buy\b(.*)$/,
       /^i would like to buy\b(.*)$/,
+      // The explicit-verb forms must precede the bare "i want" / "i would
+      // like" rules, or the verb survives into the item name and the list
+      // gains an entry literally called "add milk".
+      /^i would like to (?:add|get|order|purchase|grab|have|pick up)\b(.*)$/,
+      /^i want to (?:add|get|order|purchase|grab|have|pick up)\b(.*)$/,
       /^i would like\b(.*)$/,
       /^i am out of\b(.*)$/,
       /^we are out of\b(.*)$/,
@@ -169,6 +195,15 @@ const ENGLISH: LanguageRules = {
   articles: ['a', 'an'],
   connectors: ['of'],
 
+  leadNoise: [
+    'please', 'ok', 'okay', 'alright', 'right', 'well', 'so', 'now', 'then',
+    'hey', 'hi', 'hello there', 'yeah', 'yep', 'yes', 'um', 'uh', 'er', 'ah',
+    'actually', 'maybe', 'just', 'quickly', 'also', 'and', 'but',
+    'can you', 'could you', 'would you', 'will you', 'can u',
+    'i want you to', 'i would like you to', 'i need you to',
+    'let us', 'lets', 'go ahead and', 'help me',
+  ],
+
   fillerPhrases: [
     'to my shopping list', 'from my shopping list', 'on my shopping list',
     'to the shopping list', 'off my shopping list', 'my shopping list',
@@ -186,17 +221,21 @@ const ENGLISH: LanguageRules = {
 
   examples: [
     'add milk',
+    'two apples',
     'add 2 bottles of water',
     'remove milk',
-    'change apples to 5',
+    'find organic apples',
+    'alternative to milk',
   ],
   placeholder: 'Type a command, e.g. add 2 bottles of water',
   helpMessage: [
     'Try commands like:',
     '"add milk" · "I need apples" · "I want to buy bananas"',
-    '"add 2 bottles of water" · "add a dozen eggs"',
+    '"add 2 bottles of water" · "a dozen eggs" · "2 kg rice"',
     '"remove milk" · "take eggs off my list"',
     '"change apples to 5" · "clear my list"',
+    '"find organic apples" · "find toothpaste under ₹500"',
+    '"alternative to milk"',
   ].join('\n'),
 }
 
@@ -234,6 +273,11 @@ const HINDI_UPDATE_MARKERS = [
 
 const HINDI_SEARCH_MARKERS = ['खोजो', 'ढूंढो', 'ढूँढो', 'खोजें', 'सर्च करो']
 
+const HINDI_SUBSTITUTE_MARKERS = [
+  'का विकल्प', 'के विकल्प', 'की जगह क्या', 'के बदले क्या',
+  'का विकल्प बताओ', 'विकल्प बताओ', 'का दूसरा विकल्प', 'विकल्प',
+]
+
 const HINDI_LIST_NOUNS = [
   'सूची', 'मेरी सूची', 'पूरी सूची', 'सूची को',
   'लिस्ट', 'मेरी लिस्ट', 'पूरी लिस्ट', 'लिस्ट को',
@@ -262,6 +306,7 @@ const HINDI: LanguageRules = {
     ],
     update: [suffixRule(HINDI_UPDATE_MARKERS)],
     remove: [suffixRule(HINDI_REMOVE_MARKERS)],
+    substitute: [suffixRule(HINDI_SUBSTITUTE_MARKERS)],
     search: [suffixRule(HINDI_SEARCH_MARKERS)],
     add: [suffixRule(HINDI_ADD_MARKERS)],
   },
@@ -284,6 +329,8 @@ const HINDI: LanguageRules = {
   // "एक" is already a number word, so "एक दर्जन" arrives as "1 दर्जन".
   articles: [],
   connectors: ['का', 'की', 'के'],
+
+  leadNoise: ['कृपया', 'ज़रा', 'जरा', 'अरे', 'अच्छा', 'ठीक है', 'तो', 'अब', 'हाँ', 'हां'],
 
   fillerPhrases: [
     'मेरी सूची में', 'मेरी लिस्ट में', 'सूची में', 'लिस्ट में',
@@ -318,6 +365,7 @@ const HINDI: LanguageRules = {
     'दो बोतल पानी जोड़ो',
     'दूध हटाओ',
     'सेब को 5 कर दो',
+    'दूध का विकल्प',
   ],
   placeholder: 'कमांड लिखें, जैसे दो बोतल पानी जोड़ो',
   helpMessage: [
@@ -326,6 +374,7 @@ const HINDI: LanguageRules = {
     '"दो बोतल पानी जोड़ो" · "एक किलो चावल जोड़ो"',
     '"दूध हटाओ" · "सेब निकालो"',
     '"सेब को 5 कर दो" · "मेरी सूची साफ करो"',
+    '"टूथपेस्ट खोजो" · "दूध का विकल्प"',
   ].join('\n'),
 }
 

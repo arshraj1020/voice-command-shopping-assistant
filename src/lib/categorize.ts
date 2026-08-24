@@ -25,6 +25,23 @@ const MATCH_ENTRIES: readonly (readonly [string, Category])[] = (() => {
   return entries.sort((a, b) => b[0].length - a[0].length)
 })()
 
+/**
+ * True when the name *is* a known grocery item, rather than merely containing
+ * one. Only the two exact-match passes count.
+ *
+ * The parser uses this to decide whether an utterance with no command verb
+ * ("two apples") may be treated as an add. Containment is deliberately not
+ * enough: "what about milk" contains a keyword but is a question, not a
+ * product, and must stay `unknown`.
+ */
+export function isKnownItemName(itemName: string): boolean {
+  const name = normalizeItemName(itemName)
+  if (!name) return false
+
+  const singular = singularizePhrase(name)
+  return MATCH_ENTRIES.some(([keyword]) => keyword === name || keyword === singular)
+}
+
 /** True when `keyword` appears in `name` as a whole word or phrase. */
 function containsPhrase(name: string, keyword: string): boolean {
   const index = name.indexOf(keyword)
